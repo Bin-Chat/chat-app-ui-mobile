@@ -1,65 +1,70 @@
 import { create } from 'zustand';
+import { authServices } from '@/services/authServices';
+import { clearCookies, getCookieHeader, setLogoutHandler } from '@/api/authorizedAxios';
+import type { User } from '@/types/user';
 
-type User = {
-  id: string;
-  email: string;
-  name: string;
-  avatar?: string;
-};
-
-type AuthState = {
+interface AuthState {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  setUser: (user: User) => void;
-};
+}
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  token: null,
-  isAuthenticated: false,
-  isLoading: false,
+interface AuthActions {
+  setAuth: (user: User) => void;
+  setLoading: (v: boolean) => void;
+  logout: () => Promise<void>;
+  fetchProfile: () => Promise<void>;
+  updateUser: (data: Partial<User>) => void;
+}
 
-  login: async (email: string, password: string) => {
-    set({ isLoading: true });
-    try {
-      // TODO: Implement actual API call
-      // const response = await authAPI.login(email, password);
-      // const { user, token } = response.data;
+export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
+  // Register logout handler for authorizedAxios 401/410 interceptor
+  setLogoutHandler(async () => {
+    await clearCookies();
+    set({ user: null, isAuthenticated: false, isLoading: false });
+  });
 
-      // Mock data for now
-      const mockUser = {
-        id: '1',
-        email,
-        name: 'Test User',
-      };
-      const mockToken = 'mock-jwt-token';
+  return {
+    user: null,
+    isAuthenticated: false,
+    isLoading: true,
 
-      set({
-        user: mockUser,
-        token: mockToken,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    } catch (error) {
-      console.error('Login error:', error);
-      set({ isLoading: false });
-      throw error;
-    }
-  },
+    setAuth: (user: User) => set({ user, isAuthenticated: true, isLoading: false }),
 
-  logout: () => {
-    set({
-      user: null,
-      token: null,
-      isAuthenticated: false,
-    });
-  },
+    setLoading: (v: boolean) => set({ isLoading: v }),
 
-  setUser: (user: User) => {
-    set({ user });
-  },
-}));
+    updateUser: (data: Partial<User>) => {
+      const current = get().user;
+      if (current) set({ user: { ...current, ...data } });
+    },
+
+    logout: async () => {
+      try {
+        await authServices.logout();
+      } catch {
+        // ignore network errors on logout
+      } finally {
+        await clearCookies();
+        set({ user: null, isAuthenticated: false, isLoading: false });
+      }
+    },
+
+    fetchProfile: async () => {
+      set({ isLoading: true });
+      // Skip the API call if there are no cookies — user is not logged in.
+      // This avoids triggering the 401 → refresh flow on a fresh app start.
+      const cookie = await getCookieHeader();
+      if (!cookie) {
+        set({ user: null, isAuthenticated: false, isLoading: false });
+        return;
+      }
+      try {
+        const data = await authServices.getProfile();
+        const user = (data as { user: User }).user ?? (data as unknown as User);
+        set({ user, isAuthenticated: true, isLoading: false });
+      } catch {
+        set({ user: null, isAuthenticated: false, isLoading: false });
+      }
+    },
+  };
+});

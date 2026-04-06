@@ -1,32 +1,34 @@
 import { io, Socket } from 'socket.io-client';
-
-const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:8080';
+import { getApiUrl } from '@/api/getApiUrl';
 
 class SocketService {
   private socket: Socket | null = null;
+  private _userId: string | null = null;
 
-  connect(token: string) {
-    if (this.socket?.connected) {
-      return;
-    }
+  connect(userId: string) {
+    if (this.socket?.connected) return;
 
-    this.socket = io(SOCKET_URL, {
-      auth: {
-        token,
-      },
-      transports: ['websocket'],
+    this._userId = userId;
+
+    this.socket = io(getApiUrl(), {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
     });
 
     this.socket.on('connect', () => {
-      console.log('Socket connected');
+      console.log('[socket] connected:', this.socket?.id);
+      // Auto-join user room so gateway can route events to us
+      if (this._userId) {
+        this.socket?.emit('join', { userId: this._userId });
+      }
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('Socket disconnected');
+    this.socket.on('disconnect', (reason) => {
+      console.log('[socket] disconnected:', reason);
     });
 
-    this.socket.on('error', (error) => {
-      console.error('Socket error:', error);
+    this.socket.on('connect_error', (err) => {
+      console.error('[socket] connection error:', err.message);
     });
   }
 
@@ -34,7 +36,12 @@ class SocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this._userId = null;
     }
+  }
+
+  get connected(): boolean {
+    return this.socket?.connected ?? false;
   }
 
   on(event: string, callback: (...args: any[]) => void) {
@@ -49,25 +56,13 @@ class SocketService {
     this.socket?.emit(event, data);
   }
 
-  // Chat events
+  // Chat room helpers
   joinRoom(roomId: string) {
     this.emit('join_room', { roomId });
   }
 
   leaveRoom(roomId: string) {
     this.emit('leave_room', { roomId });
-  }
-
-  sendMessage(roomId: string, message: string) {
-    this.emit('send_message', { roomId, message });
-  }
-
-  onNewMessage(callback: (message: any) => void) {
-    this.on('new_message', callback);
-  }
-
-  onTyping(callback: (data: any) => void) {
-    this.on('typing', callback);
   }
 }
 
