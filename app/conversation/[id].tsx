@@ -31,6 +31,9 @@ import {
   FileText,
   Video as VideoIcon,
   Info,
+  Pin,
+  ChevronDown,
+  Ban,
 } from 'lucide-react-native';
 
 import { useChatStore } from '@/store/chatStore';
@@ -59,12 +62,15 @@ function formatTime(dateStr: string) {
 // ── Image Grid ──
 
 function ImageGrid({ images, onPress }: { images: Attachment[]; onPress: (idx: number) => void }) {
+  const gridW = SCREEN_WIDTH * 0.6; // ~60% screen width
+  const halfW = (gridW - 2) / 2;
+
   if (images.length === 1) {
     return (
       <TouchableOpacity onPress={() => onPress(0)} className="mb-1">
         <Image
           source={{ uri: images[0].thumbnailUrl || images[0].url }}
-          className="w-52 h-52 rounded-lg"
+          style={{ width: gridW, height: gridW, borderRadius: 12 }}
           resizeMode="cover"
         />
       </TouchableOpacity>
@@ -72,12 +78,15 @@ function ImageGrid({ images, onPress }: { images: Attachment[]; onPress: (idx: n
   }
   if (images.length === 2) {
     return (
-      <View className="flex-row gap-1 mb-1">
+      <View
+        style={{ flexDirection: 'row', gap: 2, width: gridW, borderRadius: 12, overflow: 'hidden' }}
+        className="mb-1"
+      >
         {images.map((img, i) => (
           <TouchableOpacity key={img.url} onPress={() => onPress(i)}>
             <Image
               source={{ uri: img.thumbnailUrl || img.url }}
-              className="w-[100px] h-[100px] rounded-lg"
+              style={{ width: halfW, height: halfW }}
               resizeMode="cover"
             />
           </TouchableOpacity>
@@ -85,20 +94,65 @@ function ImageGrid({ images, onPress }: { images: Attachment[]; onPress: (idx: n
       </View>
     );
   }
-  // 3+ images
+  if (images.length === 3) {
+    return (
+      <View style={{ width: gridW, borderRadius: 12, overflow: 'hidden' }} className="mb-1">
+        <TouchableOpacity onPress={() => onPress(0)}>
+          <Image
+            source={{ uri: images[0].thumbnailUrl || images[0].url }}
+            style={{ width: gridW, height: gridW * 0.55 }}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 2, marginTop: 2 }}>
+          {images.slice(1).map((img, i) => (
+            <TouchableOpacity key={img.url} onPress={() => onPress(i + 1)}>
+              <Image
+                source={{ uri: img.thumbnailUrl || img.url }}
+                style={{ width: halfW, height: halfW }}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  }
+  // 4+ images: 2x2 grid with overlay for extras
   const displayed = images.slice(0, 4);
   const remaining = images.length - 4;
   return (
-    <View className="flex-row flex-wrap gap-1 mb-1">
+    <View
+      style={{
+        width: gridW,
+        borderRadius: 12,
+        overflow: 'hidden',
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 2,
+      }}
+      className="mb-1"
+    >
       {displayed.map((img, i) => (
-        <TouchableOpacity key={img.url} onPress={() => onPress(i)} className="relative">
+        <TouchableOpacity key={img.url} onPress={() => onPress(i)} style={{ position: 'relative' }}>
           <Image
             source={{ uri: img.thumbnailUrl || img.url }}
-            className="w-[100px] h-[100px] rounded-lg"
+            style={{ width: halfW, height: halfW }}
             resizeMode="cover"
           />
           {i === 3 && remaining > 0 && (
-            <View className="absolute inset-0 bg-black/50 rounded-lg items-center justify-center">
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
               <Text className="text-white text-lg font-bold">+{remaining}</Text>
             </View>
           )}
@@ -121,6 +175,11 @@ function MessageBubble({
   onReply,
   onForward,
   onScrollToMessage,
+  isAdminOrOwner = false,
+  conversationType,
+  isPinned = false,
+  onPin,
+  onlyAdminCanPin,
 }: {
   message: Message;
   isMine: boolean;
@@ -132,6 +191,11 @@ function MessageBubble({
   onReply: (msg: Message) => void;
   onForward: (msg: Message) => void;
   onScrollToMessage: (messageId: string) => void;
+  isAdminOrOwner?: boolean;
+  conversationType?: 'direct' | 'group';
+  isPinned?: boolean;
+  onPin?: () => void;
+  onlyAdminCanPin?: boolean;
 }) {
   const { revokeMessage, deleteMessage, reactToMessage } = useChatStore();
   const [showActions, setShowActions] = useState(false);
@@ -139,9 +203,12 @@ function MessageBubble({
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
 
   const isRevoked = !!message.revokedAt;
+  const isSystemMsg = message.type === 'system' || message.senderId === 'system';
   const timeStr = formatTime(message.createdAt);
   const canRevoke =
     isMine && !isRevoked && Date.now() - new Date(message.createdAt).getTime() < 15 * 60 * 1000;
+  // Respect onlyAdminCanPin group setting
+  const canPin = !isRevoked && !isSystemMsg && (!onlyAdminCanPin || isAdminOrOwner);
 
   const images = message.attachments.filter((a) => a.type === 'image');
   const videos = message.attachments.filter((a) => a.type === 'video');
@@ -632,6 +699,20 @@ function MessageBubble({
                 <Text className="text-[15px] text-orange-500 ml-2">Thu hồi</Text>
               </TouchableOpacity>
             )}
+            {canPin && (
+              <TouchableOpacity
+                className="flex-row items-center py-3"
+                onPress={() => {
+                  setShowActions(false);
+                  onPin?.();
+                }}
+              >
+                <Pin size={18} color="#f59e0b" />
+                <Text className="text-[15px] text-amber-500 ml-2">
+                  {isPinned ? 'Bỏ ghim' : 'Ghim tin nhắn'}
+                </Text>
+              </TouchableOpacity>
+            )}
             {isMine ? (
               <TouchableOpacity className="flex-row items-center py-3" onPress={handleDelete}>
                 <Trash2 size={18} color="#ef4444" />
@@ -669,6 +750,7 @@ export default function ConversationScreen() {
   const {
     conversations,
     messages: allMessages,
+    pinnedMessages: allPinnedMessages,
     hasMore: allHasMore,
     loadingMessages,
     sendingMessage,
@@ -676,12 +758,45 @@ export default function ConversationScreen() {
     sendMessage,
     forwardMessage,
     setActiveConversation,
+    pinMessage: storePinMessage,
+    unpinMessage: storeUnpinMessage,
+    fetchPinnedMessages,
   } = useChatStore();
 
   const conversationId = id ?? '';
   const conversation = conversations.find((c) => c._id === conversationId);
   const messages = allMessages[conversationId] ?? [];
+  const pinnedMessages = allPinnedMessages[conversationId] ?? [];
   const hasMore = allHasMore[conversationId] ?? true;
+
+  const myRole = conversation?.participants.find((p) => p.userId === user?.id)?.role;
+  const isAdminOrOwner = myRole === 'owner' || myRole === 'admin';
+
+  // Multi-pin banner cycling
+  const [pinnedBannerIdx, setPinnedBannerIdx] = useState(0);
+  useEffect(() => {
+    setPinnedBannerIdx(0);
+  }, [conversationId, pinnedMessages.length]);
+  const currentPinned = pinnedMessages[pinnedBannerIdx] ?? null;
+
+  // Zalo-style pin action notification (bottom of message area)
+  const [pinNotif, setPinNotif] = useState<{
+    messageId: string;
+    preview: string;
+    action: 'pin' | 'unpin';
+  } | null>(null);
+  const pinNotifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showPinBanner = (messageId: string, preview: string, action: 'pin' | 'unpin') => {
+    if (pinNotifTimer.current) clearTimeout(pinNotifTimer.current);
+    setPinNotif({ messageId, preview, action });
+    pinNotifTimer.current = setTimeout(() => setPinNotif(null), 4000);
+  };
+
+  // Restricted input when onlyAdminCanSend
+  const isOnlyAdminCanSend = !!conversation?.settings?.onlyAdminCanSend;
+  const isOnlyAdminCanPin = !!conversation?.settings?.onlyAdminCanPin;
+  const isInputRestricted = isOnlyAdminCanSend && !isAdminOrOwner;
+  const isBannedMember = !!conversation?.participants.find((p) => p.userId === user?.id)?.isBanned;
 
   const otherUser = useMemo(() => {
     if (!conversation || conversation.type !== 'direct') return null;
@@ -698,6 +813,11 @@ export default function ConversationScreen() {
   // Load messages
   useEffect(() => {
     if (conversationId) fetchMessages(conversationId);
+  }, [conversationId]);
+
+  // Load pinned messages
+  useEffect(() => {
+    if (conversationId) fetchPinnedMessages(conversationId);
   }, [conversationId]);
 
   // Mark conversation as active (clears unread count) on enter; clear on leave
@@ -725,27 +845,27 @@ export default function ConversationScreen() {
 
     setUploading(true);
     try {
-      // Upload + send each attachment as its own message (same as web)
+      // 1. Upload all attachments first
+      const uploadedAll: any[] = [];
       for (const att of attachmentsToSend) {
         const uploaded = await uploadFile(att.uri, att.filename, att.mimeType, att.size);
-        await sendMessage(conversationId, undefined, [uploaded], null);
+        uploadedAll.push(uploaded);
       }
-      // Send text message (with reply context) if any
-      if (trimmed) {
-        await sendMessage(
-          conversationId,
-          trimmed,
-          undefined,
-          currentReply
-            ? {
-                messageId: currentReply._id,
-                senderId: currentReply.senderId,
-                content: currentReply.content?.slice(0, 100) ?? '',
-                attachmentType: currentReply.attachments?.[0]?.type,
-              }
-            : null
-        );
-      }
+
+      // 2. Send ONE message with all attachments + text/reply together
+      await sendMessage(
+        conversationId,
+        trimmed || undefined,
+        uploadedAll.length > 0 ? uploadedAll : undefined,
+        currentReply
+          ? {
+              messageId: currentReply._id,
+              senderId: currentReply.senderId,
+              content: currentReply.content?.slice(0, 100) ?? '',
+              attachmentType: currentReply.attachments?.[0]?.type,
+            }
+          : null
+      );
     } catch (e: any) {
       console.error('[handleSend] error:', e?.response?.data ?? e?.message ?? e);
       const msg = e?.response?.data?.message ?? e?.message ?? 'Không thể gửi tin nhắn';
@@ -845,6 +965,7 @@ export default function ConversationScreen() {
         mediaTypes: 'videos' as ImagePicker.MediaType,
         selectionLimit: 1,
         videoMaxDuration: 120,
+        copyToCacheDirectory: true,
       });
       if (result.canceled) return;
 
@@ -904,16 +1025,13 @@ export default function ConversationScreen() {
     const showAvatar = !isMine && (!prevMsg || prevMsg.senderId !== item.senderId);
     const sender = !isMine ? friends.find((f) => f.user.id === item.senderId)?.user : null;
     // Show sender name in group chats when avatar is shown
-    const showSenderName =
-      conversation?.type === 'group' && !isMine && showAvatar;
+    const showSenderName = conversation?.type === 'group' && !isMine && showAvatar;
     msgIndexMap.current.set(item._id, index);
 
     return (
       <View>
         {showSenderName && sender && (
-          <Text className="text-[11px] text-gray-400 ml-12 mb-0.5 px-3">
-            {sender.fullName}
-          </Text>
+          <Text className="text-[11px] text-gray-400 ml-12 mb-0.5 px-3">{sender.fullName}</Text>
         )}
         <MessageBubble
           message={item}
@@ -926,6 +1044,24 @@ export default function ConversationScreen() {
           onReply={setReplyingTo}
           onForward={setForwardingMessage}
           onScrollToMessage={handleScrollToMessage}
+          isAdminOrOwner={isAdminOrOwner}
+          conversationType={conversation?.type}
+          isPinned={pinnedMessages.some((p) => p._id === item._id)}
+          onlyAdminCanPin={isOnlyAdminCanPin}
+          onPin={async () => {
+            const isAlreadyPinned = pinnedMessages.some((p) => p._id === item._id);
+            try {
+              if (isAlreadyPinned) {
+                await storeUnpinMessage(item._id, conversationId);
+                showPinBanner(item._id, item.content || '[Tệp đính kèm]', 'unpin');
+              } else {
+                await storePinMessage(item._id, conversationId);
+                showPinBanner(item._id, item.content || '[Tệp đính kèm]', 'pin');
+              }
+            } catch (err: any) {
+              Alert.alert('Lỗi', err?.message ?? 'Thao tác thất bại');
+            }
+          }}
         />
       </View>
     );
@@ -966,6 +1102,37 @@ export default function ConversationScreen() {
         )}
       </View>
 
+      {/* Pinned message banner */}
+      {currentPinned && (
+        <View className="flex-row items-center px-4 py-2 bg-amber-50 border-b border-amber-100">
+          <Pin size={13} color="#f59e0b" />
+          <TouchableOpacity
+            className="flex-1 min-w-0 ml-2"
+            onPress={() => handleScrollToMessage(currentPinned._id)}
+            activeOpacity={0.7}
+          >
+            <Text className="text-[10px] font-semibold text-amber-600">
+              Tin nhắn được ghim
+              {pinnedMessages.length > 1
+                ? ` (${pinnedBannerIdx + 1}/${pinnedMessages.length})`
+                : ''}
+            </Text>
+            <Text className="text-[12px] text-gray-600" numberOfLines={1}>
+              {currentPinned.content || '[Tệp đính kèm]'}
+            </Text>
+          </TouchableOpacity>
+          {pinnedMessages.length > 1 && (
+            <TouchableOpacity
+              onPress={() => setPinnedBannerIdx((i) => (i + 1) % pinnedMessages.length)}
+              className="w-7 h-7 items-center justify-center rounded-full"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ChevronDown size={16} color="#f59e0b" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {/* Messages */}
       <KeyboardAvoidingView
         className="flex-1"
@@ -992,129 +1159,175 @@ export default function ConversationScreen() {
 
         {/* Input */}
         <View className="border-t border-gray-100 bg-white" style={{ paddingBottom: bottomInset }}>
-          {/* Reply preview */}
-          {replyingTo && (
-            <View className="flex-row items-center gap-2 mx-3 mt-2 px-3 py-2 bg-gray-50 rounded-xl border-l-4 border-[#0068FF]">
-              <Reply size={14} color="#0068FF" />
-              <View className="flex-1">
-                <Text className="text-[11px] font-semibold text-[#0068FF]">Đang trả lời</Text>
-                <Text className="text-[12px] text-gray-500" numberOfLines={1}>
-                  {replyingTo.content || '[Hình ảnh/Video/Tệp tin]'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setReplyingTo(null)} className="p-1">
-                <X size={14} color="#9ca3af" />
+          {/* Pin action notification (Zalo-style) */}
+          {pinNotif && (
+            <View className="flex-row items-center gap-2 px-4 py-2.5 bg-[#1e1e2e]">
+              <Pin size={13} color="#fbbf24" />
+              <Text className="flex-1 text-[13px] text-white" numberOfLines={1}>
+                {pinNotif.action === 'pin' ? 'Bạn đã ghim' : 'Bạn đã bỏ ghim'} 1 tin nhắn{' '}
+                <Text className="text-gray-400">{pinNotif.preview}</Text>
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  handleScrollToMessage(pinNotif.messageId);
+                  setPinNotif(null);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text className="text-[13px] text-[#4DA3FF] font-medium">Xem</Text>
               </TouchableOpacity>
             </View>
           )}
-          <View className="flex-row items-end px-3 py-2">
-            {/* Image picker */}
-            <TouchableOpacity
-              onPress={handlePickAttachment}
-              className="w-9 h-9 items-center justify-center mr-0.5"
-            >
-              <ImageIcon size={19} color="#6b7280" />
-            </TouchableOpacity>
-            {/* Video picker */}
-            <TouchableOpacity
-              onPress={handlePickVideo}
-              className="w-9 h-9 items-center justify-center mr-0.5"
-            >
-              <VideoIcon size={19} color="#6b7280" />
-            </TouchableOpacity>
-            {/* Document picker */}
-            <TouchableOpacity
-              onPress={handlePickDocument}
-              className="w-9 h-9 items-center justify-center mr-1"
-            >
-              <FileText size={19} color="#6b7280" />
-            </TouchableOpacity>
-            <TextInput
-              value={text}
-              onChangeText={setText}
-              placeholder="Nhập tin nhắn..."
-              multiline
-              maxLength={2000}
-              className="flex-1 bg-gray-50 rounded-2xl px-4 py-2.5 text-[14px] max-h-[100px] border border-gray-100"
-              placeholderTextColor="#9ca3af"
-            />
-            <TouchableOpacity
-              onPress={handleSend}
-              disabled={
-                uploading || sendingMessage || (!text.trim() && pendingAttachments.length === 0)
-              }
-              className={`ml-2 w-10 h-10 rounded-full items-center justify-center ${
-                text.trim() || pendingAttachments.length > 0 ? 'bg-[#0068FF]' : 'bg-gray-200'
-              }`}
-            >
-              {uploading || sendingMessage ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Send
-                  size={18}
-                  color={text.trim() || pendingAttachments.length > 0 ? '#fff' : '#9ca3af'}
-                />
-              )}
-            </TouchableOpacity>
-          </View>
-          {/* Attachment preview strip */}
-          {pendingAttachments.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}
-            >
-              {pendingAttachments.map((att, i) => (
-                <View key={att.uri || String(i)} style={{ width: 72, height: 72 }}>
-                  {att.type === 'image' ? (
-                    <Image
-                      source={{ uri: att.uri }}
-                      style={{ width: 72, height: 72, borderRadius: 8 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 72,
-                        height: 72,
-                        borderRadius: 8,
-                        backgroundColor: '#1f2937',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        paddingHorizontal: 4,
-                      }}
-                    >
-                      <Text style={{ color: '#9ca3af', fontSize: 18 }}>
-                        {att.type === 'video' ? '🎬' : '📄'}
-                      </Text>
-                      <Text
-                        style={{ color: '#9ca3af', fontSize: 9, marginTop: 2, textAlign: 'center' }}
-                        numberOfLines={2}
-                      >
-                        {att.filename}
-                      </Text>
-                    </View>
-                  )}
-                  {/* Remove button */}
-                  <TouchableOpacity
-                    onPress={() => setPendingAttachments((prev) => prev.filter((_, j) => j !== i))}
-                    style={{
-                      position: 'absolute',
-                      top: -6,
-                      right: -6,
-                      width: 20,
-                      height: 20,
-                      borderRadius: 10,
-                      backgroundColor: '#ef4444',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>✕</Text>
+
+          {/* Restricted input */}
+          {isBannedMember ? (
+            <View className="flex-row items-center gap-2 px-4 py-3.5 bg-red-50 border-t border-red-200">
+              <Ban size={16} color="#ef4444" />
+              <Text className="flex-1 text-[13px] text-red-600">
+                Bạn đang bị cấm gửi tin nhắn trong nhóm này.
+              </Text>
+            </View>
+          ) : isInputRestricted ? (
+            <View className="flex-row items-center gap-2 px-4 py-3.5 bg-gray-800">
+              <Info size={16} color="#d1d5db" />
+              <Text className="flex-1 text-[13px] text-gray-300">
+                Chỉ trưởng/phó cộng đồng được gửi tin nhắn vào cộng đồng.
+              </Text>
+            </View>
+          ) : (
+            <>
+              {/* Reply preview */}
+              {replyingTo && (
+                <View className="flex-row items-center gap-2 mx-3 mt-2 px-3 py-2 bg-gray-50 rounded-xl border-l-4 border-[#0068FF]">
+                  <Reply size={14} color="#0068FF" />
+                  <View className="flex-1">
+                    <Text className="text-[11px] font-semibold text-[#0068FF]">Đang trả lời</Text>
+                    <Text className="text-[12px] text-gray-500" numberOfLines={1}>
+                      {replyingTo.content || '[Hình ảnh/Video/Tệp tin]'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setReplyingTo(null)} className="p-1">
+                    <X size={14} color="#9ca3af" />
                   </TouchableOpacity>
                 </View>
-              ))}
-            </ScrollView>
+              )}
+              <View className="flex-row items-end px-3 py-2">
+                {/* Image picker */}
+                <TouchableOpacity
+                  onPress={handlePickAttachment}
+                  className="w-9 h-9 items-center justify-center mr-0.5"
+                >
+                  <ImageIcon size={19} color="#6b7280" />
+                </TouchableOpacity>
+                {/* Video picker */}
+                <TouchableOpacity
+                  onPress={handlePickVideo}
+                  className="w-9 h-9 items-center justify-center mr-0.5"
+                >
+                  <VideoIcon size={19} color="#6b7280" />
+                </TouchableOpacity>
+                {/* Document picker */}
+                <TouchableOpacity
+                  onPress={handlePickDocument}
+                  className="w-9 h-9 items-center justify-center mr-1"
+                >
+                  <FileText size={19} color="#6b7280" />
+                </TouchableOpacity>
+                <TextInput
+                  value={text}
+                  onChangeText={setText}
+                  placeholder="Nhập tin nhắn..."
+                  multiline
+                  maxLength={2000}
+                  className="flex-1 bg-gray-50 rounded-2xl px-4 py-2.5 text-[14px] max-h-[100px] border border-gray-100"
+                  placeholderTextColor="#9ca3af"
+                />
+                <TouchableOpacity
+                  onPress={handleSend}
+                  disabled={
+                    uploading || sendingMessage || (!text.trim() && pendingAttachments.length === 0)
+                  }
+                  className={`ml-2 w-10 h-10 rounded-full items-center justify-center ${
+                    text.trim() || pendingAttachments.length > 0 ? 'bg-[#0068FF]' : 'bg-gray-200'
+                  }`}
+                >
+                  {uploading || sendingMessage ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Send
+                      size={18}
+                      color={text.trim() || pendingAttachments.length > 0 ? '#fff' : '#9ca3af'}
+                    />
+                  )}
+                </TouchableOpacity>
+              </View>
+              {/* Attachment preview strip */}
+              {pendingAttachments.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 8, gap: 8 }}
+                >
+                  {pendingAttachments.map((att, i) => (
+                    <View key={att.uri || String(i)} style={{ width: 72, height: 72 }}>
+                      {att.type === 'image' ? (
+                        <Image
+                          source={{ uri: att.uri }}
+                          style={{ width: 72, height: 72, borderRadius: 8 }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 72,
+                            height: 72,
+                            borderRadius: 8,
+                            backgroundColor: '#1f2937',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingHorizontal: 4,
+                          }}
+                        >
+                          <Text style={{ color: '#9ca3af', fontSize: 18 }}>
+                            {att.type === 'video' ? '🎬' : '📄'}
+                          </Text>
+                          <Text
+                            style={{
+                              color: '#9ca3af',
+                              fontSize: 9,
+                              marginTop: 2,
+                              textAlign: 'center',
+                            }}
+                            numberOfLines={2}
+                          >
+                            {att.filename}
+                          </Text>
+                        </View>
+                      )}
+                      {/* Remove button */}
+                      <TouchableOpacity
+                        onPress={() =>
+                          setPendingAttachments((prev) => prev.filter((_, j) => j !== i))
+                        }
+                        style={{
+                          position: 'absolute',
+                          top: -6,
+                          right: -6,
+                          width: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          backgroundColor: '#ef4444',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </>
           )}
         </View>
       </KeyboardAvoidingView>

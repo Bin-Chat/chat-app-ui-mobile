@@ -3,8 +3,14 @@ import authorizedAxios from '@/api/authorizedAxios';
 import type { User } from '@/types/user';
 
 export const authServices = {
-  login: (data: { email: string; password: string }) =>
-    publicAxios.post('/api/auth/login', data).then((r) => r.data),
+  login: (data: { email: string; password: string; deviceName?: string }) =>
+    publicAxios
+      .post('/api/auth/login', {
+        ...data,
+        deviceType: 'mobile',
+        deviceName: data.deviceName ?? 'Điện thoại',
+      })
+      .then((r) => r.data),
 
   register: (data: { email: string; password: string; fullName: string }) =>
     publicAxios.post('/api/auth/register', data).then((r) => r.data),
@@ -32,6 +38,26 @@ export const authServices = {
 
   changePassword: (data: { currentPassword: string; newPassword: string }) =>
     authorizedAxios.patch('/api/auth/change-password', data).then((r) => r.data),
+
+  // ── Device Management ───────────────────────────────────────────────────
+
+  getDevices: () =>
+    authorizedAxios
+      .get<
+        {
+          deviceId: string;
+          deviceType: string;
+          deviceName?: string;
+          loginAt: string;
+          isCurrent: boolean;
+        }[]
+      >('/api/auth/devices')
+      .then((r) => r.data),
+
+  remoteLogout: (deviceId: string) =>
+    authorizedAxios
+      .delete<{ message: string }>(`/api/auth/devices/${deviceId}`)
+      .then((r) => r.data),
 
   presignUpload: (data: {
     category: 'avatar' | 'image' | 'video' | 'document';

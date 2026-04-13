@@ -45,6 +45,9 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
     socketMessageRevoked,
     socketReactionToggled,
     socketConversationUpdated,
+    socketConversationSettingsUpdated,
+    socketMessagePinned,
+    socketMessageUnpinned,
     showInAppNotification,
   } = useChatStore();
 
@@ -117,6 +120,27 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       chatSocket?.on('conversation:updated', (payload: any) => {
         socketConversationUpdated(payload);
       });
+
+      chatSocket?.on(
+        'conversation:settings',
+        (payload: { conversationId: string; settings: Record<string, any> }) => {
+          socketConversationSettingsUpdated(payload);
+        }
+      );
+
+      chatSocket?.on(
+        'message:pinned',
+        (payload: { messageId: string; conversationId: string; pinnedBy: string }) => {
+          socketMessagePinned(payload);
+        }
+      );
+
+      chatSocket?.on(
+        'message:unpinned',
+        (payload: { messageId: string; conversationId: string }) => {
+          socketMessageUnpinned(payload);
+        }
+      );
     });
 
     return () => {
@@ -124,6 +148,9 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
       chatSocket?.off('message:revoked');
       chatSocket?.off('message:reaction');
       chatSocket?.off('conversation:updated');
+      chatSocket?.off('message:pinned');
+      chatSocket?.off('message:unpinned');
+      chatSocket?.off('conversation:settings');
     };
   }, [isAuthenticated, user?.id]);
 

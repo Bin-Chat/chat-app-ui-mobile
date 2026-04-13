@@ -18,7 +18,16 @@ import { z } from 'zod';
 import { useAuthStore } from '@/store/authStore';
 import { authServices } from '@/services/authServices';
 import { UserAvatar } from '@/components/UserAvatar';
-import { Camera, ChevronRight, Lock, LogOut } from 'lucide-react-native';
+import {
+  Camera,
+  ChevronRight,
+  Lock,
+  LogOut,
+  Monitor,
+  Smartphone,
+  Trash2,
+  RefreshCw,
+} from 'lucide-react-native';
 
 const profileSchema = z.object({
   fullName: z.string().min(2, 'Tên ít nhất 2 ký tự').max(50),
@@ -27,10 +36,60 @@ const profileSchema = z.object({
 });
 type ProfileForm = z.infer<typeof profileSchema>;
 
+interface DeviceItem {
+  deviceId: string;
+  deviceType: string;
+  deviceName?: string;
+  loginAt: string;
+  isCurrent: boolean;
+}
+
 export default function SettingsScreen() {
   const { user, updateUser, logout } = useAuthStore();
   const router = useRouter();
   const [uploadingAvatar, setUploadingAvatar] = React.useState(false);
+
+  // Devices state
+  const [devices, setDevices] = React.useState<DeviceItem[]>([]);
+  const [devicesLoading, setDevicesLoading] = React.useState(false);
+  const [kickingDevice, setKickingDevice] = React.useState<string | null>(null);
+
+  const loadDevices = React.useCallback(async () => {
+    setDevicesLoading(true);
+    try {
+      const data = await authServices.getDevices();
+      setDevices(data);
+    } catch {
+      // silently fail on load
+    } finally {
+      setDevicesLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadDevices();
+  }, [loadDevices]);
+
+  const handleKickDevice = async (deviceId: string) => {
+    Alert.alert('Đăng xuất thiết bị', 'Thiết bị này sẽ bị đăng xuất ngay lập tức.', [
+      { text: 'Huỷ', style: 'cancel' },
+      {
+        text: 'Đăng xuất',
+        style: 'destructive',
+        onPress: async () => {
+          setKickingDevice(deviceId);
+          try {
+            await authServices.remoteLogout(deviceId);
+            await loadDevices();
+          } catch {
+            Alert.alert('Lỗi', 'Không thể đăng xuất thiết bị. Vui lòng thử lại.');
+          } finally {
+            setKickingDevice(null);
+          }
+        },
+      },
+    ]);
+  };
 
   // Profile form
   const {
@@ -214,6 +273,81 @@ export default function SettingsScreen() {
         <Text className="flex-1 text-gray-800 font-medium">Đổi mật khẩu</Text>
         <ChevronRight size={18} color="#9ca3af" />
       </TouchableOpacity>
+
+      {/* Devices */}
+      <View className="mx-4 mb-4 bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <View className="flex-row items-center justify-between px-5 py-3.5 border-b border-gray-100">
+          <Text className="font-semibold text-gray-800">Thiết bị đã đăng nhập</Text>
+          <TouchableOpacity onPress={loadDevices} disabled={devicesLoading}>
+            <RefreshCw size={16} color={devicesLoading ? '#d1d5db' : '#6b7280'} />
+          </TouchableOpacity>
+        </View>
+
+        {devicesLoading && devices.length === 0 ? (
+          <View className="py-4 items-center">
+            <ActivityIndicator size="small" color="#0068FF" />
+          </View>
+        ) : devices.length === 0 ? (
+          <Text className="text-gray-400 text-sm text-center py-4">Không có dữ liệu</Text>
+        ) : (
+          devices.map((device, idx) => {
+            const DeviceIcon = device.deviceType === 'mobile' ? Smartphone : Monitor;
+            const loginDate = new Date(device.loginAt);
+            const dateStr =
+              loginDate.toLocaleDateString('vi-VN', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              }) +
+              ' ' +
+              loginDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+            return (
+              <View
+                key={device.deviceId}
+                className={`flex-row items-center px-5 py-3.5 ${
+                  idx < devices.length - 1 ? 'border-b border-gray-50' : ''
+                } ${device.isCurrent ? 'bg-blue-50/50' : ''}`}
+              >
+                <View
+                  className={`w-9 h-9 rounded-xl items-center justify-center mr-3 ${
+                    device.isCurrent ? 'bg-primary' : 'bg-gray-100'
+                  }`}
+                >
+                  <DeviceIcon size={18} color={device.isCurrent ? '#fff' : '#6b7280'} />
+                </View>
+                <View className="flex-1">
+                  <View className="flex-row items-center gap-1.5">
+                    <Text className="text-gray-800 font-medium text-sm">
+                      {device.deviceName ??
+                        (device.deviceType === 'mobile' ? 'Điện thoại' : 'Trình duyệt web')}
+                    </Text>
+                    {device.isCurrent && (
+                      <View className="bg-primary px-1.5 py-0.5 rounded-full">
+                        <Text className="text-white text-[10px] font-medium">Thiết bị này</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text className="text-gray-400 text-xs mt-0.5">{dateStr}</Text>
+                </View>
+                {!device.isCurrent && (
+                  <TouchableOpacity
+                    onPress={() => handleKickDevice(device.deviceId)}
+                    disabled={kickingDevice === device.deviceId}
+                    className="w-8 h-8 items-center justify-center"
+                  >
+                    {kickingDevice === device.deviceId ? (
+                      <ActivityIndicator size="small" color="#ef4444" />
+                    ) : (
+                      <Trash2 size={18} color="#ef4444" />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })
+        )}
+      </View>
 
       {/* Logout */}
       <TouchableOpacity

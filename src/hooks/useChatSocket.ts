@@ -50,6 +50,8 @@ export function useChatSocket() {
     socketGroupRoleChanged,
     socketGroupDissolved,
     socketGroupOwnerTransferred,
+    socketMemberBanned,
+    socketMemberUnbanned,
   } = useChatStore();
   const { fetchFriends } = useFriendStore();
 
@@ -109,22 +111,49 @@ export function useChatSocket() {
 
     // ── Group events ────────────────────────────────────────────
     const onGroupMembersAdded = (payload: any) => {
-      socketGroupMembersAdded(payload);
-      if (payload.addedUserIds?.includes(user.id)) {
+      // Backend sends `newMemberIds`, normalize to `addedUserIds`
+      const addedUserIds = payload.newMemberIds || payload.addedUserIds || [];
+      socketGroupMembersAdded({ ...payload, addedUserIds });
+      if (addedUserIds.includes(user.id)) {
         fetchConversations();
       }
     };
     const onGroupMemberRemoved = (payload: any) => {
-      socketGroupMemberRemoved(payload);
-      if (payload.removedUserId === user.id) {
+      // Backend sends `removedMemberId`, normalize to `removedUserId`
+      const removedUserId = payload.removedUserId || payload.removedMemberId;
+      socketGroupMemberRemoved({ ...payload, removedUserId });
+      if (removedUserId === user.id) {
         fetchConversations();
       }
     };
     const onGroupMemberLeft = (payload: any) => socketGroupMemberLeft(payload);
-    const onGroupUpdated = (payload: any) => socketGroupUpdated(payload);
-    const onGroupRoleChanged = (payload: any) => socketGroupRoleChanged(payload);
+    const onGroupUpdated = (payload: any) => {
+      // Backend sends updates in `changes` object, flatten for store
+      socketGroupUpdated({
+        conversationId: payload.conversationId,
+        ...payload.changes,
+      });
+    };
+    const onGroupRoleChanged = (payload: any) => {
+      // Backend sends `memberId`, normalize to `targetUserId`
+      const targetUserId = payload.targetUserId || payload.memberId;
+      socketGroupRoleChanged({ ...payload, targetUserId });
+    };
     const onGroupDissolved = (payload: any) => socketGroupDissolved(payload);
     const onGroupOwnerTransferred = (payload: any) => socketGroupOwnerTransferred(payload);
+    const onMemberBanned = (payload: any) => {
+      socketMemberBanned({
+        conversationId: payload.conversationId,
+        memberId: payload.memberId,
+        bannedUntil: payload.bannedUntil ?? null,
+      });
+    };
+    const onMemberUnbanned = (payload: any) => {
+      socketMemberUnbanned({
+        conversationId: payload.conversationId,
+        memberId: payload.memberId,
+      });
+    };
 
     socketService.on('group:members_added', onGroupMembersAdded);
     socketService.on('group:member_removed', onGroupMemberRemoved);
@@ -133,6 +162,8 @@ export function useChatSocket() {
     socketService.on('group:role_changed', onGroupRoleChanged);
     socketService.on('group:dissolved', onGroupDissolved);
     socketService.on('group:owner_transferred', onGroupOwnerTransferred);
+    socketService.on('member:banned', onMemberBanned);
+    socketService.on('member:unbanned', onMemberUnbanned);
 
     return () => {
       socketService.off('message:new', onMessageNew);
@@ -146,6 +177,8 @@ export function useChatSocket() {
       socketService.off('group:role_changed', onGroupRoleChanged);
       socketService.off('group:dissolved', onGroupDissolved);
       socketService.off('group:owner_transferred', onGroupOwnerTransferred);
+      socketService.off('member:banned', onMemberBanned);
+      socketService.off('member:unbanned', onMemberUnbanned);
     };
   }, [user?.id]);
 }

@@ -47,6 +47,8 @@ export interface Participant {
   userId: string;
   role: 'owner' | 'admin' | 'member';
   joinedAt: string;
+  isBanned?: boolean;
+  bannedUntil?: string | null;
 }
 
 export interface LastMessage {
@@ -64,6 +66,13 @@ export interface Conversation {
   name?: string;
   avatar?: string;
   description?: string;
+  settings?: {
+    onlyAdminCanSend?: boolean;
+    allowMemberInvite?: boolean;
+    onlyAdminCanPin?: boolean;
+    requireJoinApproval?: boolean;
+    chatHistoryForNewMembers?: boolean;
+  };
   createdAt: string;
   updatedAt: string;
 }

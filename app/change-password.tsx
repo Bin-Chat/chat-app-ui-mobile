@@ -59,11 +59,13 @@ export default function ChangePasswordScreen() {
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e: unknown) {
-      Alert.alert(
-        'Lỗi',
-        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-          'Không thể đổi mật khẩu.'
-      );
+      const resp = (e as any)?.response?.data;
+      const msg =
+        (Array.isArray(resp?.message) ? resp.message[0] : resp?.message) ??
+        resp?.error ??
+        (e as any)?.message ??
+        'Không thể đổi mật khẩu.';
+      Alert.alert('Lỗi', msg);
     }
   };
 

@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { MessageCircle, Users, Settings } from 'lucide-react-native';
 import { useFriendSocket } from '@/hooks/useFriendSocket';
 import { useChatSocket } from '@/hooks/useChatSocket';
+import { useSessionSocket } from '@/hooks/useSessionSocket';
 import { useAuthStore } from '@/store/authStore';
 
 export default function AppLayout() {
@@ -12,6 +13,7 @@ export default function AppLayout() {
   // Wire realtime events for the entire (app) group
   useFriendSocket();
   useChatSocket();
+  useSessionSocket();
 
   // Auth guard: redirect after render (avoids useFocusEffect → useNavigation timing issues)
   useEffect(() => {

@@ -6,6 +6,7 @@ interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
   messages: Record<string, Message[]>;
+  pinnedMessages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
   loadingConversations: boolean;
   loadingMessages: boolean;
@@ -62,24 +63,70 @@ interface ChatActions {
   addGroupMembers: (conversationId: string, memberIds: string[]) => Promise<void>;
   removeGroupMember: (conversationId: string, memberId: string) => Promise<void>;
   leaveGroup: (conversationId: string) => Promise<void>;
-  updateGroup: (conversationId: string, data: { name?: string; avatar?: string; description?: string }) => Promise<void>;
-  changeGroupRole: (conversationId: string, memberId: string, role: 'admin' | 'member') => Promise<void>;
+  updateGroup: (
+    conversationId: string,
+    data: { name?: string; avatar?: string; description?: string }
+  ) => Promise<void>;
+  changeGroupRole: (
+    conversationId: string,
+    memberId: string,
+    role: 'admin' | 'member'
+  ) => Promise<void>;
   transferGroupOwnership: (conversationId: string, newOwnerId: string) => Promise<void>;
   dissolveGroup: (conversationId: string) => Promise<void>;
+  banGroupMember: (conversationId: string, memberId: string, bannedUntil?: string) => Promise<void>;
+  unbanGroupMember: (conversationId: string, memberId: string) => Promise<void>;
   // Group socket handlers
   socketGroupMembersAdded: (data: { conversationId: string; addedUserIds: string[] }) => void;
   socketGroupMemberRemoved: (data: { conversationId: string; removedUserId: string }) => void;
   socketGroupMemberLeft: (data: { conversationId: string; userId: string }) => void;
-  socketGroupUpdated: (data: { conversationId: string; name?: string; avatar?: string; description?: string }) => void;
-  socketGroupRoleChanged: (data: { conversationId: string; targetUserId: string; newRole: 'admin' | 'member' }) => void;
+  socketGroupUpdated: (data: {
+    conversationId: string;
+    name?: string;
+    avatar?: string;
+    description?: string;
+  }) => void;
+  socketGroupRoleChanged: (data: {
+    conversationId: string;
+    targetUserId: string;
+    newRole: 'admin' | 'member';
+  }) => void;
   socketGroupDissolved: (data: { conversationId: string }) => void;
-  socketGroupOwnerTransferred: (data: { conversationId: string; oldOwnerId: string; newOwnerId: string }) => void;
+  socketGroupOwnerTransferred: (data: {
+    conversationId: string;
+    oldOwnerId: string;
+    newOwnerId: string;
+  }) => void;
+  // Pin
+  pinMessage: (messageId: string, conversationId: string) => Promise<void>;
+  unpinMessage: (messageId: string, conversationId: string) => Promise<void>;
+  fetchPinnedMessages: (conversationId: string) => Promise<void>;
+  socketMessagePinned: (data: {
+    messageId: string;
+    conversationId: string;
+    pinnedBy: string;
+  }) => void;
+  socketMessageUnpinned: (data: { messageId: string; conversationId: string }) => void;
+  // Group settings
+  updateGroupSettings: (conversationId: string, settings: Record<string, boolean>) => Promise<void>;
+  socketConversationSettingsUpdated: (data: {
+    conversationId: string;
+    settings: Record<string, any>;
+  }) => void;
+  // Ban socket handlers
+  socketMemberBanned: (data: {
+    conversationId: string;
+    memberId: string;
+    bannedUntil?: string | null;
+  }) => void;
+  socketMemberUnbanned: (data: { conversationId: string; memberId: string }) => void;
 }
 
 export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   conversations: [],
   activeConversationId: null,
   messages: {},
+  pinnedMessages: {},
   hasMore: {},
   loadingConversations: false,
   loadingMessages: false,
@@ -267,7 +314,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     set((s) => {
       const idx = s.conversations.findIndex((c) => c._id === conversation._id);
       // Only update existing conversations — NEVER insert unknown entries
-      // (prevents ghost "Nhóm chat" caused by ObjectId mapping mismatch on backend)
+      // (prevents ghost "中文名" caused by ObjectId mapping mismatch on backend)
       if (idx < 0) return {};
       const conversations = [...s.conversations];
       conversations[idx] = { ...conversations[idx], ...conversation };
@@ -303,18 +350,14 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   addGroupMembers: async (conversationId, memberIds) => {
     const updated = await chatServices.addMembers(conversationId, memberIds);
     set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c._id === updated._id ? { ...c, ...updated } : c
-      ),
+      conversations: s.conversations.map((c) => (c._id === updated._id ? { ...c, ...updated } : c)),
     }));
   },
 
   removeGroupMember: async (conversationId, memberId) => {
     const updated = await chatServices.removeMember(conversationId, memberId);
     set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c._id === updated._id ? { ...c, ...updated } : c
-      ),
+      conversations: s.conversations.map((c) => (c._id === updated._id ? { ...c, ...updated } : c)),
     }));
   },
 
@@ -330,9 +373,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   updateGroup: async (conversationId, data) => {
     const updated = await chatServices.updateGroup(conversationId, data);
     set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c._id === updated._id ? { ...c, ...updated } : c
-      ),
+      conversations: s.conversations.map((c) => (c._id === updated._id ? { ...c, ...updated } : c)),
     }));
   },
 
@@ -353,6 +394,36 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     }));
   },
 
+  banGroupMember: async (conversationId, memberId, bannedUntil) => {
+    await chatServices.banMember(conversationId, memberId, bannedUntil);
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c._id !== conversationId) return c;
+        return {
+          ...c,
+          participants: c.participants.map((p) =>
+            p.userId === memberId ? { ...p, isBanned: true, bannedUntil: bannedUntil ?? null } : p
+          ),
+        };
+      }),
+    }));
+  },
+
+  unbanGroupMember: async (conversationId, memberId) => {
+    await chatServices.unbanMember(conversationId, memberId);
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c._id !== conversationId) return c;
+        return {
+          ...c,
+          participants: c.participants.map((p) =>
+            p.userId === memberId ? { ...p, isBanned: false, bannedUntil: null } : p
+          ),
+        };
+      }),
+    }));
+  },
+
   // ── Group Socket Handlers ──────────────────────────────────────────
 
   socketGroupMembersAdded: ({ conversationId, addedUserIds }) => {
@@ -362,7 +433,11 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         const newParticipants = [...c.participants];
         for (const uid of addedUserIds) {
           if (!newParticipants.some((p) => p.userId === uid)) {
-            newParticipants.push({ userId: uid, role: 'member', joinedAt: new Date().toISOString() });
+            newParticipants.push({
+              userId: uid,
+              role: 'member',
+              joinedAt: new Date().toISOString(),
+            });
           }
         }
         return { ...c, participants: newParticipants };
@@ -435,6 +510,96 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             if (p.userId === newOwnerId) return { ...p, role: 'owner' as const };
             return p;
           }),
+        };
+      }),
+    }));
+  },
+
+  // ── Pin Actions ─────────────────────────────────────────────────────────
+
+  pinMessage: async (messageId, conversationId) => {
+    await chatServices.pinMessage(messageId);
+    const pins = await chatServices.getPinnedMessages(conversationId);
+    set((s) => ({ pinnedMessages: { ...s.pinnedMessages, [conversationId]: pins } }));
+  },
+
+  unpinMessage: async (messageId, conversationId) => {
+    await chatServices.unpinMessage(messageId);
+    const pins = await chatServices.getPinnedMessages(conversationId);
+    set((s) => ({ pinnedMessages: { ...s.pinnedMessages, [conversationId]: pins } }));
+  },
+
+  fetchPinnedMessages: async (conversationId) => {
+    const pins = await chatServices.getPinnedMessages(conversationId);
+    set((s) => ({ pinnedMessages: { ...s.pinnedMessages, [conversationId]: pins } }));
+  },
+
+  socketMessagePinned: ({ messageId, conversationId, pinnedBy }) => {
+    const { fetchPinnedMessages } = get();
+    fetchPinnedMessages(conversationId);
+  },
+
+  socketMessageUnpinned: ({ messageId, conversationId }) => {
+    set((s) => ({
+      pinnedMessages: {
+        ...s.pinnedMessages,
+        [conversationId]: (s.pinnedMessages[conversationId] ?? []).filter(
+          (m) => m._id !== messageId
+        ),
+      },
+    }));
+  },
+
+  updateGroupSettings: async (conversationId, settings) => {
+    await chatServices.updateSettings(conversationId, settings);
+    set((s) => {
+      const idx = s.conversations.findIndex((c) => c._id === conversationId);
+      if (idx < 0) return {};
+      const conversations = [...s.conversations];
+      conversations[idx] = {
+        ...conversations[idx],
+        settings: { ...conversations[idx].settings, ...settings },
+      };
+      return { conversations };
+    });
+  },
+
+  socketConversationSettingsUpdated: ({ conversationId, settings }) => {
+    set((s) => {
+      const idx = s.conversations.findIndex((c) => c._id === conversationId);
+      if (idx < 0) return {};
+      const conversations = [...s.conversations];
+      conversations[idx] = {
+        ...conversations[idx],
+        settings: { ...conversations[idx].settings, ...settings },
+      };
+      return { conversations };
+    });
+  },
+
+  socketMemberBanned: ({ conversationId, memberId, bannedUntil }) => {
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c._id !== conversationId) return c;
+        return {
+          ...c,
+          participants: c.participants.map((p) =>
+            p.userId === memberId ? { ...p, isBanned: true, bannedUntil: bannedUntil ?? null } : p
+          ),
+        };
+      }),
+    }));
+  },
+
+  socketMemberUnbanned: ({ conversationId, memberId }) => {
+    set((s) => ({
+      conversations: s.conversations.map((c) => {
+        if (c._id !== conversationId) return c;
+        return {
+          ...c,
+          participants: c.participants.map((p) =>
+            p.userId === memberId ? { ...p, isBanned: false, bannedUntil: null } : p
+          ),
         };
       }),
     }));

@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,19 +25,27 @@ import {
   Search,
   Check,
   Edit2,
+  Camera,
+  Ban,
 } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 import { useChatStore } from '@/store/chatStore';
 import { useAuthStore } from '@/store/authStore';
 import { useFriendStore } from '@/store/friendStore';
 import { UserAvatar } from '@/components/UserAvatar';
 import { chatServices } from '@/services/chatServices';
+import { uploadFile } from '@/services/uploadService';
 import type { Participant } from '@/types/chat';
 import type { FriendItem } from '@/types/friend';
 
 // ── Role helpers ──
 const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, member: 2 };
-const ROLE_LABEL: Record<string, string> = { owner: 'Chủ nhóm', admin: 'Phó nhóm', member: 'Thành viên' };
+const ROLE_LABEL: Record<string, string> = {
+  owner: 'Chủ nhóm',
+  admin: 'Phó nhóm',
+  member: 'Thành viên',
+};
 
 function RoleBadge({ role }: { role: string }) {
   if (role === 'owner')
@@ -73,6 +82,9 @@ export default function GroupInfoScreen() {
     transferGroupOwnership,
     dissolveGroup,
     fetchConversations,
+    updateGroupSettings,
+    banGroupMember,
+    unbanGroupMember,
   } = useChatStore();
 
   const [members, setMembers] = useState<Participant[]>([]);
@@ -125,6 +137,50 @@ export default function GroupInfoScreen() {
   );
 
   // ── Actions ──
+  const handleToggleSetting = async (key: string, value: boolean) => {
+    try {
+      await updateGroupSettings(conversationId, { [key]: value });
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể cập nhật cài đặt');
+    }
+  };
+
+  const handleBanMember = (member: Participant, name: string) => {
+    Alert.alert('Cấm gửi tin nhắn', `Cấm ${name} gửi tin nhắn trong 24 giờ?`, [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Cấm 24h',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+            await banGroupMember(conversationId, member.userId, until);
+            setMembers((prev) =>
+              prev.map((m) =>
+                m.userId === member.userId ? { ...m, isBanned: true, bannedUntil: until } : m
+              )
+            );
+          } catch (e: any) {
+            Alert.alert('Lỗi', e?.message || 'Không thể cấm thành viên');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleUnbanMember = async (member: Participant, name: string) => {
+    try {
+      await unbanGroupMember(conversationId, member.userId);
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.userId === member.userId ? { ...m, isBanned: false, bannedUntil: null } : m
+        )
+      );
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể bỏ cấm');
+    }
+  };
+
   const handleLeave = () => {
     Alert.alert('Rời nhóm', 'Bạn có chắc chắn muốn rời khỏi nhóm này?', [
       { text: 'Hủy', style: 'cancel' },
@@ -188,9 +244,7 @@ export default function GroupInfoScreen() {
   const handleChangeRole = async (memberId: string, newRole: 'admin' | 'member') => {
     try {
       await changeGroupRole(conversationId, memberId, newRole);
-      setMembers((prev) =>
-        prev.map((m) => (m.userId === memberId ? { ...m, role: newRole } : m))
-      );
+      setMembers((prev) => prev.map((m) => (m.userId === memberId ? { ...m, role: newRole } : m)));
     } catch (e: any) {
       Alert.alert('Lỗi', e?.message || 'Không thể thay đổi vai trò');
     }
@@ -238,10 +292,17 @@ export default function GroupInfoScreen() {
         >
           <View className="bg-white rounded-t-2xl px-4 pt-4 pb-8">
             <View className="flex-row items-center mb-4">
-              <UserAvatar user={{ fullName: memberInfo.fullName, avatar: memberInfo.avatar ?? undefined }} size={44} />
+              <UserAvatar
+                user={{ fullName: memberInfo.fullName, avatar: memberInfo.avatar ?? undefined }}
+                size={44}
+              />
               <View className="ml-3">
-                <Text className="text-[16px] font-semibold text-gray-900">{memberInfo.fullName}</Text>
-                <Text className="text-[13px] text-gray-500">{ROLE_LABEL[memberRole] ?? 'Thành viên'}</Text>
+                <Text className="text-[16px] font-semibold text-gray-900">
+                  {memberInfo.fullName}
+                </Text>
+                <Text className="text-[13px] text-gray-500">
+                  {ROLE_LABEL[memberRole] ?? 'Thành viên'}
+                </Text>
               </View>
             </View>
 
@@ -275,6 +336,32 @@ export default function GroupInfoScreen() {
                   <Text className="ml-3 text-[15px] text-gray-800">Chuyển quyền chủ nhóm</Text>
                 </TouchableOpacity>
 
+                {!selectedMember.isBanned ? (
+                  <TouchableOpacity
+                    className="flex-row items-center py-3.5"
+                    onPress={() => {
+                      const m = selectedMember;
+                      setSelectedMember(null);
+                      handleBanMember(m, memberInfo.fullName);
+                    }}
+                  >
+                    <Ban size={18} color="#f97316" />
+                    <Text className="ml-3 text-[15px] text-orange-500">Cấm gửi tin nhắn</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    className="flex-row items-center py-3.5"
+                    onPress={() => {
+                      const m = selectedMember;
+                      setSelectedMember(null);
+                      handleUnbanMember(m, memberInfo.fullName);
+                    }}
+                  >
+                    <Ban size={18} color="#22c55e" />
+                    <Text className="ml-3 text-[15px] text-green-500">Bỏ cấm</Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
                   className="flex-row items-center py-3.5"
                   onPress={() => {
@@ -288,18 +375,45 @@ export default function GroupInfoScreen() {
               </>
             )}
 
-            {/* Admin actions – can remove members only */}
+            {/* Admin actions – can remove/ban members only */}
             {isAdmin && memberRole === 'member' && (
-              <TouchableOpacity
-                className="flex-row items-center py-3.5"
-                onPress={() => {
-                  setSelectedMember(null);
-                  handleRemoveMember(selectedMember.userId, memberInfo.fullName);
-                }}
-              >
-                <Trash2 size={18} color="#ef4444" />
-                <Text className="ml-3 text-[15px] text-red-500">Xóa khỏi nhóm</Text>
-              </TouchableOpacity>
+              <>
+                {!selectedMember.isBanned ? (
+                  <TouchableOpacity
+                    className="flex-row items-center py-3.5"
+                    onPress={() => {
+                      const m = selectedMember;
+                      setSelectedMember(null);
+                      handleBanMember(m, memberInfo.fullName);
+                    }}
+                  >
+                    <Ban size={18} color="#f97316" />
+                    <Text className="ml-3 text-[15px] text-orange-500">Cấm gửi tin nhắn</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    className="flex-row items-center py-3.5"
+                    onPress={() => {
+                      const m = selectedMember;
+                      setSelectedMember(null);
+                      handleUnbanMember(m, memberInfo.fullName);
+                    }}
+                  >
+                    <Ban size={18} color="#22c55e" />
+                    <Text className="ml-3 text-[15px] text-green-500">Bỏ cấm</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  className="flex-row items-center py-3.5"
+                  onPress={() => {
+                    setSelectedMember(null);
+                    handleRemoveMember(selectedMember.userId, memberInfo.fullName);
+                  }}
+                >
+                  <Trash2 size={18} color="#ef4444" />
+                  <Text className="ml-3 text-[15px] text-red-500">Xóa khỏi nhóm</Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </TouchableOpacity>
@@ -320,13 +434,23 @@ export default function GroupInfoScreen() {
           if (canManage && !isMe) setSelectedMember(item);
         }}
       >
-        <UserAvatar user={{ fullName: info.fullName, avatar: info.avatar ?? undefined }} size={40} />
+        <UserAvatar
+          user={{ fullName: info.fullName, avatar: info.avatar ?? undefined }}
+          size={40}
+        />
         <View className="flex-1 ml-3">
-          <View className="flex-row items-center">
+          <View className="flex-row items-center flex-wrap">
             <Text className="text-[15px] text-gray-800 font-medium" numberOfLines={1}>
-              {info.fullName}{isMe ? ' (Bạn)' : ''}
+              {info.fullName}
+              {isMe ? ' (Bạn)' : ''}
             </Text>
             <RoleBadge role={item.role} />
+            {item.isBanned && (
+              <View className="flex-row items-center bg-red-50 rounded-full px-2 py-0.5 ml-1">
+                <Ban size={10} color="#ef4444" />
+                <Text className="text-[10px] text-red-500 ml-0.5 font-medium">Bị cấm</Text>
+              </View>
+            )}
           </View>
         </View>
         {canManage && !isMe && <ChevronRight size={16} color="#d1d5db" />}
@@ -346,12 +470,18 @@ export default function GroupInfoScreen() {
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       {/* Header */}
       <View className="flex-row items-center px-3 py-2 border-b border-gray-100">
-        <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="w-9 h-9 items-center justify-center"
+        >
           <ArrowLeft size={22} color="#374151" />
         </TouchableOpacity>
         <Text className="flex-1 text-[17px] font-semibold text-gray-900 ml-2">Thông tin nhóm</Text>
         {canManage && (
-          <TouchableOpacity onPress={() => setShowEditGroup(true)} className="w-9 h-9 items-center justify-center">
+          <TouchableOpacity
+            onPress={() => setShowEditGroup(true)}
+            className="w-9 h-9 items-center justify-center"
+          >
             <Edit2 size={18} color="#0068FF" />
           </TouchableOpacity>
         )}
@@ -361,7 +491,10 @@ export default function GroupInfoScreen() {
         {/* Group info */}
         <View className="items-center pt-6 pb-4 border-b border-gray-100">
           <UserAvatar
-            user={{ fullName: conversation.name ?? 'Nhóm', avatar: conversation.avatar ?? undefined }}
+            user={{
+              fullName: conversation.name ?? 'Nhóm',
+              avatar: conversation.avatar ?? undefined,
+            }}
             size={72}
           />
           <Text className="text-[20px] font-bold text-gray-900 mt-3">
@@ -372,13 +505,11 @@ export default function GroupInfoScreen() {
               {conversation.description}
             </Text>
           )}
-          <Text className="text-[13px] text-gray-400 mt-1">
-            {members.length} thành viên
-          </Text>
+          <Text className="text-[13px] text-gray-400 mt-1">{members.length} thành viên</Text>
         </View>
 
         {/* Add member button */}
-        {canManage && (
+        {(canManage || !!(conversation?.settings as any)?.allowMemberInvite) && (
           <TouchableOpacity
             onPress={() => setShowAddMember(true)}
             className="flex-row items-center px-4 py-3.5 border-b border-gray-100"
@@ -406,6 +537,40 @@ export default function GroupInfoScreen() {
           )}
         </View>
 
+        {/* Group Settings — owner only */}
+        {isOwner && (
+          <View className="mt-2 mx-4 mb-2 bg-gray-50 rounded-2xl px-4 py-3 border border-gray-100">
+            <Text className="text-[13px] font-semibold text-gray-700 mb-3">⚙️ Cài đặt nhóm</Text>
+            {(
+              [
+                ['onlyAdminCanSend', 'Chỉ Quản trị viên gửi tin nhắn'],
+                ['allowMemberInvite', 'Thành viên được mời người khác'],
+                ['onlyAdminCanPin', 'Chỉ quản trị viên được ghim tin nhắn'],
+              ] as [string, string][]
+            ).map(([key, label]) => {
+              const val = !!(conversation?.settings as any)?.[key];
+              return (
+                <View key={key} className="flex-row items-center justify-between py-2.5">
+                  <Text className="flex-1 text-[14px] text-gray-600 mr-4">{label}</Text>
+                  <TouchableOpacity
+                    onPress={() => handleToggleSetting(key, !val)}
+                    className={`w-11 h-6 rounded-full relative ${
+                      val ? 'bg-[#0068FF]' : 'bg-gray-300'
+                    }`}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow ${
+                        val ? 'right-1' : 'left-1'
+                      }`}
+                    />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {/* Actions */}
         <View className="mt-4 border-t border-gray-100 pt-2 pb-8">
           {!isOwner && (
@@ -415,7 +580,10 @@ export default function GroupInfoScreen() {
             </TouchableOpacity>
           )}
           {isOwner && (
-            <TouchableOpacity onPress={handleDissolve} className="flex-row items-center px-4 py-3.5">
+            <TouchableOpacity
+              onPress={handleDissolve}
+              className="flex-row items-center px-4 py-3.5"
+            >
               <Trash2 size={18} color="#ef4444" />
               <Text className="ml-3 text-[15px] text-red-500 font-medium">Giải tán nhóm</Text>
             </TouchableOpacity>
@@ -446,6 +614,7 @@ export default function GroupInfoScreen() {
         <EditGroupModal
           name={conversation.name ?? ''}
           description={conversation.description ?? ''}
+          avatar={conversation.avatar ?? undefined}
           onSave={async (data) => {
             await updateGroup(conversationId, data);
             setShowEditGroup(false);
@@ -561,7 +730,10 @@ function AddMemberModal({
                   >
                     {sel && <Check size={14} color="#fff" />}
                   </View>
-                  <UserAvatar user={{ fullName: item.user.fullName, avatar: item.user.avatar ?? undefined }} size={36} />
+                  <UserAvatar
+                    user={{ fullName: item.user.fullName, avatar: item.user.avatar ?? undefined }}
+                    size={36}
+                  />
                   <Text className="ml-3 text-[15px] text-gray-800">{item.user.fullName}</Text>
                 </TouchableOpacity>
               );
@@ -582,17 +754,53 @@ function AddMemberModal({
 function EditGroupModal({
   name,
   description,
+  avatar,
   onSave,
   onClose,
 }: {
   name: string;
   description: string;
-  onSave: (data: { name?: string; description?: string }) => Promise<void>;
+  avatar?: string;
+  onSave: (data: { name?: string; description?: string; avatar?: string }) => Promise<void>;
   onClose: () => void;
 }) {
   const [newName, setNewName] = useState(name);
   const [newDesc, setNewDesc] = useState(description);
+  const [newAvatar, setNewAvatar] = useState<string | undefined>(avatar);
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handlePickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Quyền truy cập', 'Cần quyền truy cập thư viện ảnh để đổi ảnh nhóm.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images' as ImagePicker.MediaType,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setLocalAvatarUri(asset.uri);
+    setUploadingAvatar(true);
+    try {
+      const filename = asset.fileName || `group_avatar_${Date.now()}.jpg`;
+      const mimeType = asset.mimeType || 'image/jpeg';
+      const size = asset.fileSize || 0;
+      const uploaded = await uploadFile(asset.uri, filename, mimeType, size);
+      setNewAvatar(uploaded.url);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể tải ảnh lên');
+      setLocalAvatarUri(undefined);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleSave = async () => {
     const trimmedName = newName.trim();
@@ -602,9 +810,10 @@ function EditGroupModal({
     }
     setSaving(true);
     try {
-      const data: { name?: string; description?: string } = {};
+      const data: { name?: string; description?: string; avatar?: string } = {};
       if (trimmedName !== name) data.name = trimmedName;
       if (newDesc.trim() !== description) data.description = newDesc.trim();
+      if (newAvatar !== avatar) data.avatar = newAvatar;
       if (Object.keys(data).length > 0) await onSave(data);
       else onClose();
     } catch (e: any) {
@@ -614,9 +823,15 @@ function EditGroupModal({
     }
   };
 
+  const avatarSource = localAvatarUri || newAvatar;
+
   return (
     <Modal transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity className="flex-1 bg-black/40 justify-end" activeOpacity={1} onPress={onClose}>
+      <TouchableOpacity
+        className="flex-1 bg-black/40 justify-end"
+        activeOpacity={1}
+        onPress={onClose}
+      >
         <TouchableOpacity activeOpacity={1} onPress={() => {}}>
           <View className="bg-white rounded-t-2xl px-4 pt-4 pb-8">
             <View className="flex-row items-center justify-between mb-4">
@@ -624,6 +839,37 @@ function EditGroupModal({
               <TouchableOpacity onPress={onClose} className="p-1">
                 <X size={20} color="#6b7280" />
               </TouchableOpacity>
+            </View>
+
+            {/* Avatar picker */}
+            <View className="items-center mb-4">
+              <TouchableOpacity
+                onPress={handlePickAvatar}
+                disabled={uploadingAvatar}
+                className="relative"
+              >
+                {avatarSource ? (
+                  <Image
+                    source={{ uri: avatarSource }}
+                    className="w-20 h-20 rounded-full bg-gray-200"
+                    style={{ width: 80, height: 80, borderRadius: 40 }}
+                  />
+                ) : (
+                  <View className="w-20 h-20 rounded-full bg-gray-200 items-center justify-center">
+                    <Text className="text-2xl font-bold text-gray-500">
+                      {name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                <View className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#0068FF] items-center justify-center border-2 border-white">
+                  {uploadingAvatar ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Camera size={14} color="#fff" />
+                  )}
+                </View>
+              </TouchableOpacity>
+              <Text className="text-[12px] text-gray-400 mt-1">Nhấn để đổi ảnh nhóm</Text>
             </View>
 
             <Text className="text-[13px] text-gray-500 mb-1">Tên nhóm</Text>
@@ -647,7 +893,7 @@ function EditGroupModal({
 
             <TouchableOpacity
               onPress={handleSave}
-              disabled={saving}
+              disabled={saving || uploadingAvatar}
               className="bg-[#0068FF] rounded-xl py-3 items-center"
             >
               {saving ? (

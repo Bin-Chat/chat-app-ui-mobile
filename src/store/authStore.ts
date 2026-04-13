@@ -13,6 +13,7 @@ interface AuthActions {
   setAuth: (user: User) => void;
   setLoading: (v: boolean) => void;
   logout: () => Promise<void>;
+  forceLogout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
 }
@@ -47,6 +48,12 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => {
         await clearCookies();
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
+    },
+
+    // Dùng khi bị kick bởi thiết bị khác — không gọi API vì JwtAuthGuard sẽ block
+    forceLogout: async () => {
+      await clearCookies();
+      set({ user: null, isAuthenticated: false, isLoading: false });
     },
 
     fetchProfile: async () => {

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
+import { Alert } from 'react-native';
 import { saveCookies, getCookieHeader, clearCookies } from './cookieStorage';
 import { getApiUrl } from './getApiUrl';
 
@@ -66,6 +67,15 @@ authorizedAxios.interceptors.response.use(
     if (error.response?.status === 401) {
       if (originalRequest?.url?.includes('/api/auth/refresh')) {
         _logout?.();
+        return Promise.reject(error);
+      }
+
+      // Single Session: bị kick bởi thiết bị khác — thông báo và force logout ngay
+      const errMsg = (error.response?.data as any)?.message as string | undefined;
+      if (errMsg?.includes('thiết bị khác')) {
+        Alert.alert('Phiên đăng nhập hết hiệu lực', errMsg, [
+          { text: 'Đồng ý', onPress: () => _logout?.() },
+        ]);
         return Promise.reject(error);
       }
 
