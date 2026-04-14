@@ -15,7 +15,7 @@ export interface UploadedAttachment {
 export const FILE_SIZE_LIMITS: Record<FileCategory, number> = {
   image: 10 * 1024 * 1024, // 10 MB
   video: 50 * 1024 * 1024, // 50 MB
-  file: 50 * 1024 * 1024, // 50 MB
+  file: 20 * 1024 * 1024, // 20 MB (backend document limit)
 };
 
 /** Attachment type used in message bubbles (mobile-facing) */

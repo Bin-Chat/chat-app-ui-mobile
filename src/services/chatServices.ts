@@ -133,4 +133,10 @@ export const chatServices = {
     authorizedAxios
       .delete(`/api/chat/conversations/${conversationId}/members/${memberId}/ban`)
       .then((r) => r.data),
+
+  editMessage: (messageId: string, content: string) =>
+    authorizedAxios.patch(`/api/chat/messages/${messageId}`, { content }).then((r) => r.data),
+
+  markAsRead: (conversationId: string) =>
+    authorizedAxios.post(`/api/chat/conversations/${conversationId}/read`).then((r) => r.data),
 };

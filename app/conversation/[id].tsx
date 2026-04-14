@@ -34,6 +34,7 @@ import {
   Pin,
   ChevronDown,
   Ban,
+  Pencil,
 } from 'lucide-react-native';
 
 import { useChatStore } from '@/store/chatStore';
@@ -41,6 +42,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useFriendStore } from '@/store/friendStore';
 import { UserAvatar } from '@/components/UserAvatar';
 import { uploadFile, FILE_SIZE_LIMITS, getCategory } from '@/services/uploadService';
+import { chatServices } from '@/services/chatServices';
 import type { Message, Attachment } from '@/types/chat';
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
@@ -180,6 +182,7 @@ function MessageBubble({
   isPinned = false,
   onPin,
   onlyAdminCanPin,
+  onEdit,
 }: {
   message: Message;
   isMine: boolean;
@@ -196,6 +199,7 @@ function MessageBubble({
   isPinned?: boolean;
   onPin?: () => void;
   onlyAdminCanPin?: boolean;
+  onEdit?: () => void;
 }) {
   const { revokeMessage, deleteMessage, reactToMessage } = useChatStore();
   const [showActions, setShowActions] = useState(false);
@@ -207,6 +211,11 @@ function MessageBubble({
   const timeStr = formatTime(message.createdAt);
   const canRevoke =
     isMine && !isRevoked && Date.now() - new Date(message.createdAt).getTime() < 15 * 60 * 1000;
+  const canEdit =
+    isMine &&
+    !isRevoked &&
+    !isSystemMsg &&
+    Date.now() - new Date(message.createdAt).getTime() < 30 * 60 * 1000;
   // Respect onlyAdminCanPin group setting
   const canPin = !isRevoked && !isSystemMsg && (!onlyAdminCanPin || isAdminOrOwner);
 
@@ -683,6 +692,18 @@ function MessageBubble({
               <CornerUpRight size={18} color="#10b981" />
               <Text className="text-[15px] text-emerald-600 ml-2">Chuyển tiếp</Text>
             </TouchableOpacity>
+            {canEdit && onEdit && (
+              <TouchableOpacity
+                className="flex-row items-center py-3"
+                onPress={() => {
+                  setShowActions(false);
+                  onEdit();
+                }}
+              >
+                <Pencil size={18} color="#6366f1" />
+                <Text className="text-[15px] text-indigo-500 ml-2">Chỉnh sửa</Text>
+              </TouchableOpacity>
+            )}
             {message.content ? (
               <TouchableOpacity
                 className="flex-row items-center py-3"
@@ -739,6 +760,7 @@ export default function ConversationScreen() {
   const flatListRef = useRef<FlatList>(null);
   const [text, setText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -761,6 +783,7 @@ export default function ConversationScreen() {
     pinMessage: storePinMessage,
     unpinMessage: storeUnpinMessage,
     fetchPinnedMessages,
+    editMessage: storeEditMessage,
   } = useChatStore();
 
   const conversationId = id ?? '';
@@ -822,7 +845,10 @@ export default function ConversationScreen() {
 
   // Mark conversation as active (clears unread count) on enter; clear on leave
   useEffect(() => {
-    if (conversationId) setActiveConversation(conversationId);
+    if (conversationId) {
+      setActiveConversation(conversationId);
+      chatServices.markAsRead(conversationId).catch(() => {});
+    }
     return () => setActiveConversation(null);
   }, [conversationId]);
 
@@ -836,6 +862,23 @@ export default function ConversationScreen() {
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed && pendingAttachments.length === 0) return;
+
+    // Handle edit mode
+    if (editingMessage) {
+      const currentEdit = editingMessage;
+      setText('');
+      setEditingMessage(null);
+      try {
+        await storeEditMessage(currentEdit._id, conversationId, trimmed);
+      } catch (e: any) {
+        console.error('[handleSend:edit] error:', e?.response?.data ?? e?.message ?? e);
+        Alert.alert(
+          'Lỗi',
+          e?.response?.data?.message ?? e?.message ?? 'Không thể chỉnh sửa tin nhắn'
+        );
+      }
+      return;
+    }
 
     const attachmentsToSend = [...pendingAttachments];
     setText('');
@@ -1042,6 +1085,10 @@ export default function ConversationScreen() {
           conversationId={conversationId}
           userId={user?.id ?? ''}
           onReply={setReplyingTo}
+          onEdit={() => {
+            setEditingMessage(item);
+            setText(item.content ?? '');
+          }}
           onForward={setForwardingMessage}
           onScrollToMessage={handleScrollToMessage}
           isAdminOrOwner={isAdminOrOwner}
@@ -1207,6 +1254,29 @@ export default function ConversationScreen() {
                     </Text>
                   </View>
                   <TouchableOpacity onPress={() => setReplyingTo(null)} className="p-1">
+                    <X size={14} color="#9ca3af" />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {/* Edit preview */}
+              {editingMessage && (
+                <View className="flex-row items-center gap-2 mx-3 mt-2 px-3 py-2 bg-yellow-50 rounded-xl border-l-4 border-yellow-400">
+                  <Pencil size={14} color="#ca8a04" />
+                  <View className="flex-1">
+                    <Text className="text-[11px] font-semibold text-yellow-700">
+                      Đang chỉnh sửa
+                    </Text>
+                    <Text className="text-[12px] text-gray-500" numberOfLines={1}>
+                      {editingMessage.content || '[Tệp đính kèm]'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditingMessage(null);
+                      setText('');
+                    }}
+                    className="p-1"
+                  >
                     <X size={14} color="#9ca3af" />
                   </TouchableOpacity>
                 </View>

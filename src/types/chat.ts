@@ -33,12 +33,15 @@ export interface Message {
   conversationId: string;
   senderId: string;
   content: string;
+  type?: string;
   attachments: Attachment[];
   deletedFor: string[];
   revokedAt: string | null;
   forwardedFrom: ForwardInfo | null;
   replyTo: ReplyInfo | null;
   reactions: Reaction[];
+  isEdited?: boolean;
+  editedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

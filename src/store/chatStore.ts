@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { chatServices } from '@/services/chatServices';
 import type { Conversation, Message } from '@/types/chat';
+import { useAuthStore } from '@/store/authStore';
 
 interface ChatState {
   conversations: Conversation[];
@@ -36,6 +37,7 @@ interface ChatActions {
     } | null
   ) => Promise<void>;
   revokeMessage: (messageId: string, conversationId: string) => Promise<void>;
+  editMessage: (messageId: string, conversationId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string, conversationId: string) => Promise<void>;
   forwardMessage: (messageId: string, targetConversationId: string) => Promise<void>;
   reactToMessage: (
@@ -51,6 +53,13 @@ interface ChatActions {
   // Socket event handlers
   socketMessageNew: (message: Message) => void;
   socketMessageRevoked: (data: { messageId: string; conversationId: string }) => void;
+  socketMessageEdited: (data: {
+    messageId: string;
+    conversationId: string;
+    content: string;
+    isEdited: boolean;
+    editedAt: string;
+  }) => void;
   socketConversationUpdated: (conversation: Conversation) => void;
   socketReactionToggled: (data: {
     messageId: string;
@@ -148,9 +157,28 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   fetchConversations: async () => {
     set({ loadingConversations: true, error: null });
     try {
+      const userId = useAuthStore.getState().user?.id ?? '';
       const data = await chatServices.getConversations();
       const conversations = Array.isArray(data) ? data : [];
-      set({ conversations, loadingConversations: false });
+      // Compute unread counts based on lastMessage.sentAt vs participant.lastReadAt
+      const unreadCounts: Record<string, number> = {};
+      for (const conv of conversations) {
+        if (!conv.lastMessage) continue;
+        const me = conv.participants.find((p: any) => p.userId === userId);
+        if (!me) continue;
+        const lastRead = me.lastReadAt;
+        if (!lastRead || new Date((conv.lastMessage as any).sentAt) > new Date(lastRead)) {
+          unreadCounts[conv._id] = 1;
+        }
+      }
+      set((s) => {
+        // Preserve higher socket-incremented counts
+        const merged: Record<string, number> = { ...unreadCounts };
+        for (const [id, count] of Object.entries(s.unreadCounts)) {
+          if ((merged[id] ?? 0) < count) merged[id] = count;
+        }
+        return { conversations, unreadCounts: merged, loadingConversations: false };
+      });
     } catch (e: any) {
       set({ error: e.message, loadingConversations: false });
     }
@@ -229,6 +257,18 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     });
   },
 
+  editMessage: async (messageId, conversationId, content) => {
+    await chatServices.editMessage(messageId, content);
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [conversationId]: (s.messages[conversationId] ?? []).map((m) =>
+          m._id === messageId ? { ...m, content, isEdited: true } : m
+        ),
+      },
+    }));
+  },
+
   deleteMessage: async (messageId, conversationId) => {
     await chatServices.deleteMessage(messageId);
     set((s) => ({
@@ -305,6 +345,17 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         ...s.messages,
         [conversationId]: (s.messages[conversationId] ?? []).map((m) =>
           m._id === messageId ? { ...m, revokedAt: new Date().toISOString() } : m
+        ),
+      },
+    }));
+  },
+
+  socketMessageEdited: ({ messageId, conversationId, content, isEdited, editedAt }) => {
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [conversationId]: (s.messages[conversationId] ?? []).map((m) =>
+          m._id === messageId ? { ...m, content, isEdited, editedAt } : m
         ),
       },
     }));

@@ -52,6 +52,7 @@ export function useChatSocket() {
     socketGroupOwnerTransferred,
     socketMemberBanned,
     socketMemberUnbanned,
+    socketMessageEdited,
   } = useChatStore();
   const { fetchFriends } = useFriendStore();
 
@@ -154,6 +155,15 @@ export function useChatSocket() {
         memberId: payload.memberId,
       });
     };
+    const onMessageEdited = (payload: any) => {
+      socketMessageEdited({
+        messageId: payload.messageId,
+        conversationId: payload.conversationId,
+        content: payload.content,
+        isEdited: true,
+        editedAt: payload.editedAt,
+      });
+    };
 
     socketService.on('group:members_added', onGroupMembersAdded);
     socketService.on('group:member_removed', onGroupMemberRemoved);
@@ -164,6 +174,7 @@ export function useChatSocket() {
     socketService.on('group:owner_transferred', onGroupOwnerTransferred);
     socketService.on('member:banned', onMemberBanned);
     socketService.on('member:unbanned', onMemberUnbanned);
+    socketService.on('message:edited', onMessageEdited);
 
     return () => {
       socketService.off('message:new', onMessageNew);
@@ -179,6 +190,7 @@ export function useChatSocket() {
       socketService.off('group:owner_transferred', onGroupOwnerTransferred);
       socketService.off('member:banned', onMemberBanned);
       socketService.off('member:unbanned', onMemberUnbanned);
+      socketService.off('message:edited', onMessageEdited);
     };
   }, [user?.id]);
 }
