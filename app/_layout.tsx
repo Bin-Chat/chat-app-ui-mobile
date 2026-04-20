@@ -8,11 +8,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
+import { useCallStore } from '@/store/callStore';
+import { socketService } from '@/services/socket';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -111,6 +113,93 @@ function AuthInit() {
   return null;
 }
 
+// ── Incoming call banner ──────────────────────────────────────────────────────
+function IncomingCallBanner() {
+  const incoming = useCallStore((s) => s.incomingCall);
+  const clearIncomingCall = useCallStore((s) => s.clearIncomingCall);
+  const acceptCallStore = useCallStore((s) => s.acceptCall);
+  const endCall = useCallStore((s) => s.endCall);
+  const router = useRouter();
+  const topOffset = Platform.OS === 'ios' ? 52 : (RNStatusBar.currentHeight ?? 24) + 8;
+
+  if (!incoming) return null;
+
+  const handleAccept = () => {
+    socketService.emit('call:accept', { callId: incoming.callId });
+    acceptCallStore({
+      callId: incoming.callId,
+      conversationId: incoming.conversationId,
+      callType: incoming.callType,
+      callerId: incoming.callerId,
+    });
+    router.push('/call');
+  };
+
+  const handleDecline = () => {
+    socketService.emit('call:reject', { callId: incoming.callId });
+    clearIncomingCall();
+    endCall();
+  };
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        top: topOffset,
+        left: 16,
+        right: 16,
+        zIndex: 9999,
+        backgroundColor: '#1f2937',
+        borderRadius: 14,
+        padding: 14,
+        flexDirection: 'row',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+        elevation: 10,
+      }}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+          {incoming.callerName}
+        </Text>
+        <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 2 }}>
+          {incoming.callType === 'video' ? '📹 Gọi video đến' : '📞 Gọi thoại đến'}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={handleDecline}
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: '#ef4444',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: 8,
+        }}
+      >
+        <Text style={{ fontSize: 18 }}>📵</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={handleAccept}
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: '#22c55e',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 18 }}>📞</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function RootLayout() {
   return (
     <View style={{ flex: 1 }}>
@@ -123,10 +212,15 @@ export default function RootLayout() {
         <Stack.Screen name="create-group" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="group-info/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="change-password" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen
+          name="call"
+          options={{ animation: 'fade', presentation: 'fullScreenModal' }}
+        />
       </Stack>
-      {/* AuthInit and NotificationBanner are siblings to Stack, not wrappers */}
+      {/* AuthInit and banners are siblings to Stack, not wrappers */}
       <AuthInit />
       <NotificationBanner />
+      <IncomingCallBanner />
     </View>
   );
 }

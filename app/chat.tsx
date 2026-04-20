@@ -10,13 +10,14 @@ import {
 } from 'react-native';
 import { useState, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Send } from 'lucide-react-native';
+import { ArrowLeft, Send, Phone, Video, PhoneMissed, VideoOff } from 'lucide-react-native';
 
 type Message = {
   id: string;
   text: string;
   sender: 'me' | 'other';
   timestamp: Date;
+  type?: 'text' | 'system';
 };
 
 export default function ChatScreen() {
@@ -39,23 +40,66 @@ export default function ChatScreen() {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View className={`mb-2 max-w-[78%] ${item.sender === 'me' ? 'self-end' : 'self-start'}`}>
-      <View
-        className={`px-4 py-2.5 rounded-2xl ${
-          item.sender === 'me'
-            ? 'bg-primary rounded-br-sm'
-            : 'bg-white border border-gray-100 rounded-bl-sm'
-        }`}
-      >
-        <Text
-          className={`text-sm leading-5 ${item.sender === 'me' ? 'text-white' : 'text-gray-800'}`}
+  const renderMessage = ({ item }: { item: Message }) => {
+    // ── System message (call events, group events) ─────────────────
+    if (item.type === 'system') {
+      const content = item.text;
+      const isVoiceCall = content.startsWith('[VOICE]') || content.startsWith('📞');
+      const isVideoCall = content.startsWith('[VIDEO]') || content.startsWith('📹');
+
+      if (isVoiceCall || isVideoCall) {
+        const rest =
+          content.startsWith('[VOICE]') || content.startsWith('[VIDEO]')
+            ? content.slice(7).trim()
+            : content.slice(2).trim();
+        const isMissed = rest.includes('bị hủy');
+        const iconColor = isMissed ? '#9ca3af' : isVideoCall ? '#3b82f6' : '#22c55e';
+        const CallIcon = isVideoCall
+          ? isMissed
+            ? VideoOff
+            : Video
+          : isMissed
+            ? PhoneMissed
+            : Phone;
+        return (
+          <View className="items-center my-2">
+            <View className="flex-row items-center gap-2 bg-gray-100 rounded-2xl px-4 py-2 max-w-[260px]">
+              <CallIcon size={14} color={iconColor} />
+              <Text className="text-xs font-medium text-gray-700 ml-1.5">{rest}</Text>
+            </View>
+          </View>
+        );
+      }
+
+      // Generic system pill
+      return (
+        <View className="items-center my-1.5">
+          <View className="bg-gray-100 rounded-full px-3 py-1">
+            <Text className="text-[11px] text-gray-500">{content}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // ── Normal message bubble ──────────────────────────────────────
+    return (
+      <View className={`mb-2 max-w-[78%] ${item.sender === 'me' ? 'self-end' : 'self-start'}`}>
+        <View
+          className={`px-4 py-2.5 rounded-2xl ${
+            item.sender === 'me'
+              ? 'bg-primary rounded-br-sm'
+              : 'bg-white border border-gray-100 rounded-bl-sm'
+          }`}
         >
-          {item.text}
-        </Text>
+          <Text
+            className={`text-sm leading-5 ${item.sender === 'me' ? 'text-white' : 'text-gray-800'}`}
+          >
+            {item.text}
+          </Text>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50">

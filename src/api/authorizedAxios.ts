@@ -22,6 +22,10 @@ const authorizedAxios = axios.create({
   baseURL: getApiUrl(),
   timeout: 1000 * 60 * 10,
   withCredentials: false,
+  // Force XHR adapter — axios 1.7+ auto-selects fetch adapter in RN 0.81+
+  // because global fetch is available, but RN's fetch throws
+  // "Body is unusable: Body has already been read" on retry/intercept flows.
+  adapter: 'xhr',
 });
 
 // ── Request interceptor: attach cookies ──────────────────────────────────────

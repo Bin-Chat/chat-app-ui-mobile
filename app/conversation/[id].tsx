@@ -35,11 +35,17 @@ import {
   ChevronDown,
   Ban,
   Pencil,
+  Phone,
+  PhoneMissed,
+  Video,
+  VideoOff,
 } from 'lucide-react-native';
 
 import { useChatStore } from '@/store/chatStore';
 import { useAuthStore } from '@/store/authStore';
 import { useFriendStore } from '@/store/friendStore';
+import { useCallStore } from '@/store/callStore';
+import { socketService } from '@/services/socket';
 import { UserAvatar } from '@/components/UserAvatar';
 import { uploadFile, FILE_SIZE_LIMITS, getCategory } from '@/services/uploadService';
 import { chatServices } from '@/services/chatServices';
@@ -769,6 +775,8 @@ export default function ConversationScreen() {
 
   const user = useAuthStore((s) => s.user);
   const friends = useFriendStore((s) => s.friends);
+  const callStatus = useCallStore((s) => s.status);
+  const startCall = useCallStore((s) => s.startCall);
   const {
     conversations,
     messages: allMessages,
@@ -794,6 +802,36 @@ export default function ConversationScreen() {
 
   const myRole = conversation?.participants.find((p) => p.userId === user?.id)?.role;
   const isAdminOrOwner = myRole === 'owner' || myRole === 'admin';
+
+  const initiateCall = useCallback(
+    (callType: 'audio' | 'video') => {
+      if (!conversation || !user || callStatus !== 'idle') return;
+      const callId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const participantIds = conversation.participants
+        .map((p: any) => p.userId)
+        .filter((uid: string) => uid !== user.id);
+
+      socketService.emit('call:initiate', {
+        callId,
+        conversationId,
+        callType,
+        participantIds,
+        callerName: user.fullName ?? user.username ?? 'Bạn',
+        callerAvatar: user.avatar,
+      });
+
+      startCall({
+        callId,
+        conversationId,
+        callType,
+        participantIds: [...participantIds, user.id],
+        initiatorId: user.id,
+      });
+
+      router.push('/call');
+    },
+    [callStatus, conversation, conversationId, startCall, user, router]
+  );
 
   // Multi-pin banner cycling
   const [pinnedBannerIdx, setPinnedBannerIdx] = useState(0);
@@ -1051,12 +1089,99 @@ export default function ConversationScreen() {
   }, [conversationId, hasMore, loadingMessages, messages]);
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
-    // System messages (group events)
-    if (item.senderId === 'system') {
+    // System messages (call events, group events)
+    // Note: call messages sent via chatServices.sendMessage() have type='system' but
+    // senderId = actual user ID (not 'system'), so we must check both fields.
+    if (item.senderId === 'system' || item.type === 'system') {
+      const content = item.content ?? '';
+
+      // ── Call system messages ─────────────────────────────────────────
+      const isVoiceCall = content.startsWith('[VOICE]') || content.startsWith('📞');
+      const isVideoCall = content.startsWith('[VIDEO]') || content.startsWith('📹');
+
+      if (isVoiceCall || isVideoCall) {
+        const rest =
+          content.startsWith('[VOICE]') || content.startsWith('[VIDEO]')
+            ? content.slice(7).trim()
+            : content.slice(2).trim();
+
+        // "nhỡ" = missed/timeout, "từ chối" = rejected, "bị hủy" = cancelled by caller
+        const isMissed =
+          rest.includes('bị hủy') || rest.includes('nhỡ') || rest.includes('từ chối');
+        const dashIdx = rest.lastIndexOf(' - ');
+        const callLabel = dashIdx !== -1 ? rest.slice(0, dashIdx) : rest;
+        const duration = dashIdx !== -1 ? rest.slice(dashIdx + 3) : null;
+
+        const iconBgColor = isMissed ? '#f3f4f6' : isVideoCall ? '#eff6ff' : '#f0fdf4';
+        const iconColor = isMissed ? '#9ca3af' : isVideoCall ? '#3b82f6' : '#22c55e';
+        const CallIcon = isVideoCall
+          ? isMissed
+            ? VideoOff
+            : Video
+          : isMissed
+            ? PhoneMissed
+            : Phone;
+
+        return (
+          <View className="items-center my-3 px-6">
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: '#ffffff',
+                borderWidth: 1,
+                borderColor: '#e5e7eb',
+                borderRadius: 16,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                maxWidth: 280,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.06,
+                shadowRadius: 3,
+                elevation: 2,
+              }}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: iconBgColor,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <CallIcon size={20} color={iconColor} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: '#1f2937',
+                    lineHeight: 18,
+                  }}
+                  numberOfLines={1}
+                >
+                  {callLabel}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                  {isMissed ? 'Không thành công' : (duration ?? 'Đã kết thúc')}
+                </Text>
+              </View>
+            </View>
+          </View>
+        );
+      }
+
+      // ── Generic system pill ─────────────────────────────────────────
       return (
         <View className="items-center py-1.5 px-6">
           <Text className="text-[12px] text-gray-400 text-center bg-gray-50 rounded-full px-3 py-1">
-            {item.content}
+            {content}
           </Text>
         </View>
       );
@@ -1146,6 +1271,23 @@ export default function ConversationScreen() {
           >
             <Info size={20} color="#6b7280" />
           </TouchableOpacity>
+        )}
+        {/* Call buttons */}
+        {callStatus === 'idle' && (
+          <>
+            <TouchableOpacity
+              onPress={() => initiateCall('audio')}
+              className="w-9 h-9 items-center justify-center"
+            >
+              <Phone size={20} color="#6b7280" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => initiateCall('video')}
+              className="w-9 h-9 items-center justify-center"
+            >
+              <Video size={20} color="#6b7280" />
+            </TouchableOpacity>
+          </>
         )}
       </View>
 

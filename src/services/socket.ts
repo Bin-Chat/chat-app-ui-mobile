@@ -12,7 +12,11 @@ class SocketService {
 
     this.socket = io(getApiUrl(), {
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
+      // Force WebSocket only — polling uses fetch() in socket.io-client 4.7+,
+      // which conflicts with React Native 0.81's strict WHATWG fetch implementation
+      // and causes "Body is unusable: Body has already been read" errors.
+      transports: ['websocket'],
+      upgrade: false,
     });
 
     this.socket.on('connect', () => {

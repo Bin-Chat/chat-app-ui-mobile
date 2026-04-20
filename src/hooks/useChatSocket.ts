@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { useFriendStore } from '@/store/friendStore';
+import { useCallStore } from '@/store/callStore';
 import { socketService } from '@/services/socket';
 import type { Message } from '@/types/chat';
 
@@ -55,6 +56,7 @@ export function useChatSocket() {
     socketMessageEdited,
   } = useChatStore();
   const { fetchFriends } = useFriendStore();
+  const { setIncomingCall, clearIncomingCall, endCall } = useCallStore();
 
   useEffect(() => {
     if (!user) return;
@@ -176,6 +178,31 @@ export function useChatSocket() {
     socketService.on('member:unbanned', onMemberUnbanned);
     socketService.on('message:edited', onMessageEdited);
 
+    // ── Call events ───────────────────────────────────────────────
+    const onCallIncoming = (payload: {
+      callId: string;
+      conversationId: string;
+      callType: 'audio' | 'video';
+      callerId: string;
+      callerName: string;
+      callerAvatar?: string;
+    }) => {
+      setIncomingCall(payload);
+    };
+
+    const onCallEnded = () => {
+      endCall();
+    };
+
+    const onCallBusy = () => {
+      clearIncomingCall();
+      endCall();
+    };
+
+    socketService.on('call:incoming', onCallIncoming);
+    socketService.on('call:ended', onCallEnded);
+    socketService.on('call:busy', onCallBusy);
+
     return () => {
       socketService.off('message:new', onMessageNew);
       socketService.off('message:revoked', onMessageRevoked);
@@ -191,6 +218,9 @@ export function useChatSocket() {
       socketService.off('member:banned', onMemberBanned);
       socketService.off('member:unbanned', onMemberUnbanned);
       socketService.off('message:edited', onMessageEdited);
+      socketService.off('call:incoming', onCallIncoming);
+      socketService.off('call:ended', onCallEnded);
+      socketService.off('call:busy', onCallBusy);
     };
   }, [user?.id]);
 }
