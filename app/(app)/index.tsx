@@ -93,7 +93,7 @@ export default function MessagesScreen() {
               }`}
               numberOfLines={1}
             >
-              {lastMsg.content || '[Tệp đính kèm]'}
+              {lastMsg.revokedAt ? 'Tin nhắn đã thu hồi' : (lastMsg.content || '[Tệp đính kèm]')}
             </Text>
           )}
         </View>

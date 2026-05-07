@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { getVariantUrl } from '@/utils/imageUrl';
 
@@ -10,7 +10,19 @@ interface UserAvatarProps {
 }
 
 export function UserAvatar({ user, size = 40, variant = 'thumb', isOnline }: UserAvatarProps) {
-  const avatarUrl = user?.avatar ? getVariantUrl(user.avatar, variant) : null;
+  const originalUrl = user?.avatar || null;
+  const variantUrl = originalUrl ? getVariantUrl(originalUrl, variant) : null;
+
+  // Start with the variant URL; on error fall back to original, then to initials
+  const [imgUri, setImgUri] = useState<string | null>(variantUrl);
+  const [showInitials, setShowInitials] = useState(false);
+
+  // Reset when avatar changes
+  React.useEffect(() => {
+    setImgUri(variantUrl);
+    setShowInitials(false);
+  }, [variantUrl]);
+
   const initials = user?.fullName
     ? user.fullName
         .split(' ')
@@ -25,11 +37,20 @@ export function UserAvatar({ user, size = 40, variant = 'thumb', isOnline }: Use
 
   return (
     <View style={{ width: size, height: size }}>
-      {avatarUrl ? (
+      {!showInitials && imgUri ? (
         <Image
-          source={{ uri: avatarUrl }}
+          source={{ uri: imgUri }}
           style={{ width: size, height: size, borderRadius: size / 2 }}
           resizeMode="cover"
+          onError={() => {
+            // Variant failed → try original URL
+            if (imgUri !== originalUrl && originalUrl) {
+              setImgUri(originalUrl);
+            } else {
+              // Original also failed → show initials
+              setShowInitials(true);
+            }
+          }}
         />
       ) : (
         <View

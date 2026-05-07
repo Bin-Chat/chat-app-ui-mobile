@@ -246,6 +246,15 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     await chatServices.revokeMessage(messageId);
     set((s) => {
       const msgs = s.messages[conversationId] ?? [];
+      const isLast = msgs.length > 0 && msgs[0]?._id === messageId;
+      const convIdx = s.conversations.findIndex((c) => c._id === conversationId);
+      const conversations = [...s.conversations];
+      if (isLast && convIdx >= 0 && conversations[convIdx].lastMessage) {
+        conversations[convIdx] = {
+          ...conversations[convIdx],
+          lastMessage: { ...conversations[convIdx].lastMessage!, revokedAt: new Date().toISOString() },
+        };
+      }
       return {
         messages: {
           ...s.messages,
@@ -253,6 +262,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
             m._id === messageId ? { ...m, revokedAt: new Date().toISOString() } : m
           ),
         },
+        conversations,
       };
     });
   },
@@ -339,15 +349,28 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     });
   },
 
-  socketMessageRevoked: ({ messageId, conversationId }) => {
-    set((s) => ({
-      messages: {
-        ...s.messages,
-        [conversationId]: (s.messages[conversationId] ?? []).map((m) =>
-          m._id === messageId ? { ...m, revokedAt: new Date().toISOString() } : m
-        ),
-      },
-    }));
+  socketMessageRevoked: ({ messageId, conversationId, revokedBy }: { messageId: string; conversationId: string; revokedBy?: string }) => {
+    set((s) => {
+      const msgs = s.messages[conversationId] ?? [];
+      const isLast = msgs.length > 0 && msgs[0]?._id === messageId;
+      const convIdx = s.conversations.findIndex((c) => c._id === conversationId);
+      const conversations = [...s.conversations];
+      if (isLast && convIdx >= 0 && conversations[convIdx].lastMessage) {
+        conversations[convIdx] = {
+          ...conversations[convIdx],
+          lastMessage: { ...conversations[convIdx].lastMessage!, revokedAt: new Date().toISOString() },
+        };
+      }
+      return {
+        messages: {
+          ...s.messages,
+          [conversationId]: msgs.map((m) =>
+            m._id === messageId ? { ...m, revokedAt: new Date().toISOString(), ...(revokedBy ? { revokedBy } : {}) } : m
+          ),
+        },
+        conversations,
+      };
+    });
   },
 
   socketMessageEdited: ({ messageId, conversationId, content, isEdited, editedAt }) => {

@@ -105,7 +105,7 @@ export function ChatSocketProvider({ children }: { children: React.ReactNode }) 
 
       chatSocket?.on(
         'message:revoked',
-        (payload: { messageId: string; conversationId: string }) => {
+        (payload: { messageId: string; conversationId: string; revokedBy?: string }) => {
           socketMessageRevoked(payload);
         }
       );

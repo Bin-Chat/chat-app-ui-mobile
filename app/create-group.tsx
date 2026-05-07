@@ -17,6 +17,8 @@ import { useChatStore } from '@/store/chatStore';
 import { UserAvatar } from '@/components/UserAvatar';
 import type { FriendItem } from '@/types/friend';
 
+const MAX_MEMBERS = 200;
+
 export default function CreateGroupScreen() {
   const router = useRouter();
   const friends = useFriendStore((s) => s.friends);
@@ -43,21 +45,24 @@ export default function CreateGroupScreen() {
   );
 
   const toggleSelect = useCallback((userId: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
+    setSelectedIds((prev) => {
+      if (prev.includes(userId)) return prev.filter((id) => id !== userId);
+      if (prev.length >= MAX_MEMBERS) {
+        Alert.alert('Giới hạn', `Nhóm tối đa ${MAX_MEMBERS} thành viên.`);
+        return prev;
+      }
+      return [...prev, userId];
+    });
   }, []);
 
   const handleCreate = async () => {
-    const name = groupName.trim();
-    if (!name) {
-      Alert.alert('Lỗi', 'Vui lòng nhập tên nhóm');
-      return;
-    }
     if (selectedIds.length < 2) {
       Alert.alert('Lỗi', 'Cần ít nhất 2 thành viên để tạo nhóm');
       return;
     }
+    // If no name entered, auto-generate from member names
+    const autoName = selectedFriends.map((f) => f.user.fullName.split(' ').pop()).join(', ');
+    const name = groupName.trim() || autoName;
     setCreating(true);
     try {
       const conv = await createConversation(selectedIds, 'group', name);
@@ -71,21 +76,26 @@ export default function CreateGroupScreen() {
 
   const renderFriend = ({ item }: { item: FriendItem }) => {
     const isSelected = selectedIds.includes(item.user.id);
+    const isDisabled = !isSelected && selectedIds.length >= MAX_MEMBERS;
     return (
       <TouchableOpacity
         onPress={() => toggleSelect(item.user.id)}
         className="flex-row items-center px-4 py-3"
         activeOpacity={0.6}
+        disabled={isDisabled}
       >
         <View
           className={`w-6 h-6 rounded-full border-2 items-center justify-center mr-3 ${
-            isSelected ? 'bg-[#0068FF] border-[#0068FF]' : 'border-gray-300'
+            isSelected ? 'bg-[#0068FF] border-[#0068FF]' : isDisabled ? 'border-gray-200' : 'border-gray-300'
           }`}
         >
           {isSelected && <Check size={14} color="#fff" />}
         </View>
-        <UserAvatar user={{ fullName: item.user.fullName, avatar: item.user.avatar ?? undefined }} size={40} />
-        <Text className="ml-3 text-[15px] text-gray-800 flex-1" numberOfLines={1}>
+        <UserAvatar
+          user={{ fullName: item.user.fullName, avatar: item.user.avatar ?? undefined }}
+          size={40}
+        />
+        <Text className={`ml-3 text-[15px] flex-1 ${isDisabled ? 'text-gray-300' : 'text-gray-800'}`} numberOfLines={1}>
           {item.user.fullName}
         </Text>
       </TouchableOpacity>
@@ -96,15 +106,18 @@ export default function CreateGroupScreen() {
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       {/* Header */}
       <View className="flex-row items-center px-3 py-2 border-b border-gray-100">
-        <TouchableOpacity onPress={() => router.back()} className="w-9 h-9 items-center justify-center">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="w-9 h-9 items-center justify-center"
+        >
           <ArrowLeft size={22} color="#374151" />
         </TouchableOpacity>
         <Text className="flex-1 text-[17px] font-semibold text-gray-900 ml-2">Tạo nhóm</Text>
         <TouchableOpacity
           onPress={handleCreate}
-          disabled={creating || selectedIds.length < 2 || !groupName.trim()}
+          disabled={creating || selectedIds.length < 2}
           className={`px-4 py-2 rounded-full ${
-            selectedIds.length >= 2 && groupName.trim() ? 'bg-[#0068FF]' : 'bg-gray-200'
+            selectedIds.length >= 2 ? 'bg-[#0068FF]' : 'bg-gray-200'
           }`}
         >
           {creating ? (
@@ -112,10 +125,10 @@ export default function CreateGroupScreen() {
           ) : (
             <Text
               className={`text-[14px] font-semibold ${
-                selectedIds.length >= 2 && groupName.trim() ? 'text-white' : 'text-gray-400'
+                selectedIds.length >= 2 ? 'text-white' : 'text-gray-400'
               }`}
             >
-              Tạo ({selectedIds.length})
+              Tạo ({selectedIds.length}/{MAX_MEMBERS})
             </Text>
           )}
         </TouchableOpacity>
@@ -126,7 +139,7 @@ export default function CreateGroupScreen() {
         <TextInput
           value={groupName}
           onChangeText={setGroupName}
-          placeholder="Tên nhóm..."
+          placeholder="Tên nhóm (tùy chọn, mặc định lấy tên thành viên)"
           maxLength={100}
           className="text-[15px] bg-gray-50 rounded-xl px-4 py-3 border border-gray-100"
           placeholderTextColor="#9ca3af"
@@ -144,7 +157,10 @@ export default function CreateGroupScreen() {
             contentContainerStyle={{ gap: 8 }}
             renderItem={({ item }) => (
               <View className="flex-row items-center bg-blue-50 rounded-full pl-2 pr-1 py-1">
-                <UserAvatar user={{ fullName: item.user.fullName, avatar: item.user.avatar ?? undefined }} size={22} />
+                <UserAvatar
+                  user={{ fullName: item.user.fullName, avatar: item.user.avatar ?? undefined }}
+                  size={22}
+                />
                 <Text className="text-[12px] text-[#0068FF] font-medium mx-1.5" numberOfLines={1}>
                   {item.user.fullName}
                 </Text>

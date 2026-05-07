@@ -37,6 +37,7 @@ export interface Message {
   attachments: Attachment[];
   deletedFor: string[];
   revokedAt: string | null;
+  revokedBy?: string | null;
   forwardedFrom: ForwardInfo | null;
   replyTo: ReplyInfo | null;
   reactions: Reaction[];
@@ -59,6 +60,7 @@ export interface LastMessage {
   content: string;
   type: string;
   sentAt: string;
+  revokedAt?: string | null;
 }
 
 export interface Conversation {
