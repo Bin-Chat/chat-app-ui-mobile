@@ -1,7 +1,7 @@
 import authorizedAxios from '@/api/authorizedAxios';
 import * as FileSystem from 'expo-file-system/legacy';
 
-export type FileCategory = 'image' | 'video' | 'file';
+export type FileCategory = 'image' | 'video' | 'file' | 'voice';
 
 export interface UploadedAttachment {
   url: string;
@@ -10,25 +10,29 @@ export interface UploadedAttachment {
   size: number;
   mimeType: string;
   thumbnailUrl?: string;
+  duration?: number;
 }
 
 export const FILE_SIZE_LIMITS: Record<FileCategory, number> = {
-  image: 10 * 1024 * 1024, // 10 MB
-  video: 50 * 1024 * 1024, // 50 MB
-  file: 20 * 1024 * 1024, // 20 MB (backend document limit)
+  image: 10 * 1024 * 1024,  // 10 MB
+  video: 50 * 1024 * 1024,  // 50 MB
+  file: 20 * 1024 * 1024,   // 20 MB
+  voice: 10 * 1024 * 1024,  // 10 MB
 };
 
 /** Attachment type used in message bubbles (mobile-facing) */
 export function getCategory(mimeType: string): FileCategory {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'voice';
   return 'file';
 }
 
 /** Upload category expected by the backend API */
-function getUploadCategory(mimeType: string): 'image' | 'video' | 'document' {
+function getUploadCategory(mimeType: string): 'image' | 'video' | 'document' | 'voice' {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'voice';
   return 'document';
 }
 
@@ -79,7 +83,7 @@ export async function uploadFile(
     category: uploadCategory,
   });
 
-  // 2. Upload file directly to S3 via presigned URL (works with ph:// and file:// on iOS/Android)
+  // 2. Upload file directly to S3 via presigned URL
   const uploadResult = await FileSystem.uploadAsync(data.presignedUrl, uri, {
     httpMethod: 'PUT',
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
