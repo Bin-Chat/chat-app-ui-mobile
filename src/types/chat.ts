@@ -1,6 +1,6 @@
 export interface Attachment {
   url: string;
-  type: 'image' | 'video' | 'file';
+  type: 'image' | 'video' | 'file' | 'audio';
   filename: string;
   size: number;
   mimeType: string;
@@ -25,7 +25,7 @@ export interface ReplyInfo {
   messageId: string;
   senderId: string;
   content: string;
-  attachmentType?: 'image' | 'video' | 'file';
+  attachmentType?: 'image' | 'video' | 'file' | 'audio';
 }
 
 export interface Message {

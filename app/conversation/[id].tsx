@@ -19,6 +19,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useAudioRecorder, AudioModule, RecordingPresets, useAudioPlayer } from 'expo-audio';
 import {
   ArrowLeft,
   Send,
@@ -46,6 +48,10 @@ import {
   ShieldAlert,
   Bot,
   Sparkles,
+  Mic,
+  Square,
+  Play,
+  Pause,
 } from 'lucide-react-native';
 
 import { useChatStore } from '@/store/chatStore';
@@ -67,12 +73,135 @@ interface PendingAttachment {
   filename: string;
   mimeType: string;
   size: number;
-  type: 'image' | 'video' | 'file';
+  type: 'image' | 'video' | 'file' | 'audio';
+  duration?: number;
 }
 
 function formatTime(dateStr: string) {
   const d = new Date(dateStr);
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+}
+
+function fmtDuration(secs: number) {
+  if (!Number.isFinite(secs) || secs < 0) return '00:00';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+// ── Audio Message Bubble ──
+function AudioMessageBubble({
+  url,
+  isMine,
+  duration,
+}: {
+  url: string;
+  isMine: boolean;
+  duration?: number;
+}) {
+  // iOS cannot play webm/ogg — WAV/m4a/mp3 are fine
+  const isUnsupported = /\.(webm|ogg)(\?|$)/i.test(url);
+
+  // Lazy load: start with null, replace on first play tap
+  const [loaded, setLoaded] = React.useState(false);
+  const player = useAudioPlayer(loaded && !isUnsupported ? url : null, 100);
+
+  const currentSecs = Number.isFinite(player.currentTime) ? Math.floor(player.currentTime) : 0;
+  const totalSecs =
+    Number.isFinite(player.duration) && player.duration > 0
+      ? Math.floor(player.duration)
+      : (duration ?? 0);
+
+  const handlePress = () => {
+    if (isUnsupported) return;
+    if (!loaded) {
+      setLoaded(true);
+      return;
+    }
+    if (player.playing) {
+      player.pause();
+    } else {
+      player.play();
+    }
+  };
+
+  // Auto-play once loaded for the first time
+  const prevLoaded = React.useRef(false);
+  React.useEffect(() => {
+    if (loaded && !prevLoaded.current && player.isLoaded) {
+      prevLoaded.current = true;
+      player.play();
+    }
+  }, [loaded, player.isLoaded]);
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 18,
+        backgroundColor: isMine ? '#0068FF' : '#f0f0f0',
+        minWidth: 170,
+        maxWidth: 240,
+        opacity: isUnsupported ? 0.6 : 1,
+      }}
+    >
+      <TouchableOpacity
+        onPress={handlePress}
+        disabled={isUnsupported}
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 19,
+          backgroundColor: isMine ? 'rgba(255,255,255,0.25)' : '#0068FF',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {player.playing ? (
+          <Pause size={18} color="#fff" fill="#fff" />
+        ) : (
+          <Play size={18} color="#fff" fill="#fff" />
+        )}
+      </TouchableOpacity>
+      <View style={{ flex: 1, gap: 4 }}>
+        {isUnsupported ? (
+          <Text
+            style={{
+              fontSize: 11,
+              color: isMine ? 'rgba(255,255,255,0.8)' : '#6b7280',
+              fontStyle: 'italic',
+            }}
+          >
+            Không hỗ trợ trên iOS
+          </Text>
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              {[...Array(12)].map((_, i) => (
+                <View
+                  key={i}
+                  style={{
+                    width: 2.5,
+                    height: 4 + Math.sin(i * 1.2) * 6,
+                    borderRadius: 2,
+                    backgroundColor: isMine ? 'rgba(255,255,255,0.4)' : '#9ca3af',
+                  }}
+                />
+              ))}
+            </View>
+            <Text style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.85)' : '#6b7280' }}>
+              {player.playing ? fmtDuration(currentSecs) : fmtDuration(totalSecs)}
+            </Text>
+          </>
+        )}
+      </View>
+      <Mic size={14} color={isMine ? 'rgba(255,255,255,0.5)' : '#9ca3af'} />
+    </View>
+  );
 }
 
 // ── Image Grid ──
@@ -242,6 +371,7 @@ function MessageBubble({
   const images = message.attachments.filter((a) => a.type === 'image');
   const videos = message.attachments.filter((a) => a.type === 'video');
   const files = message.attachments.filter((a) => a.type === 'file');
+  const audios = message.attachments.filter((a) => a.type === 'audio');
 
   // Determine whether a bubble background is needed
   const hasText = !!message.content?.trim();
@@ -253,7 +383,14 @@ function MessageBubble({
     videos.length > 0 && !hasText && !hasReply && images.length === 0 && files.length === 0;
   const isFileOnly =
     files.length > 0 && !hasText && !hasReply && images.length === 0 && videos.length === 0;
-  const needsBubble = !isImageOnly && !isVideoOnly && !isFileOnly;
+  const isAudioOnly =
+    audios.length > 0 &&
+    !hasText &&
+    !hasReply &&
+    images.length === 0 &&
+    videos.length === 0 &&
+    files.length === 0;
+  const needsBubble = !isImageOnly && !isVideoOnly && !isFileOnly && !isAudioOnly;
 
   const groupedReactions = (message.reactions ?? []).reduce<Record<string, number>>((acc, r) => {
     acc[r.emoji] = (acc[r.emoji] || 0) + 1;
@@ -492,6 +629,25 @@ function MessageBubble({
             </View>
           )}
 
+          {/* ── Pure audio message: audio player card, no bubble ── */}
+          {isAudioOnly && (
+            <View>
+              {audios.map((a) => (
+                <AudioMessageBubble key={a.url} url={a.url} isMine={isMine} duration={a.duration} />
+              ))}
+              <Text
+                style={{
+                  fontSize: 10,
+                  color: '#9ca3af',
+                  textAlign: isMine ? 'right' : 'left',
+                  marginTop: 2,
+                }}
+              >
+                {timeStr}
+              </Text>
+            </View>
+          )}
+
           {/* ── Text / mixed / reply message: bubble with background ── */}
           {needsBubble && (
             <View
@@ -526,7 +682,9 @@ function MessageBubble({
                           ? 'Hình ảnh'
                           : message.replyTo.attachmentType === 'video'
                             ? 'Video'
-                            : 'Tệp tin'
+                            : message.replyTo.attachmentType === 'audio'
+                              ? 'Tin nhắn thoại'
+                              : 'Tệp tin'
                       }]`}
                   </Text>
                 </TouchableOpacity>
@@ -629,6 +787,10 @@ function MessageBubble({
                   {message.content}
                 </Text>
               ) : null}
+              {/* Audio inside mixed bubble */}
+              {audios.map((a) => (
+                <AudioMessageBubble key={a.url} url={a.url} isMine={isMine} duration={a.duration} />
+              ))}
               <Text
                 className={`text-[11px] text-right mt-0.5 ${isMine ? 'text-white/60' : 'text-gray-400'}`}
               >
@@ -820,6 +982,11 @@ export default function ConversationScreen() {
   const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  // Voice recording state
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // AI feature states
   const [showAiSearch, setShowAiSearch] = useState(false);
   const [aiSearchQuery, setAiSearchQuery] = useState('');
@@ -961,6 +1128,11 @@ export default function ConversationScreen() {
   // For group chats, use the conversation avatar directly
   const headerAvatar = conversation?.type === 'group' ? conversation?.avatar : avatarUser?.avatar;
 
+  // Set audio session once for the screen (playback + silent mode)
+  useEffect(() => {
+    AudioModule.setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+  }, []);
+
   // Load messages
   useEffect(() => {
     if (conversationId) fetchMessages(conversationId);
@@ -1020,7 +1192,10 @@ export default function ConversationScreen() {
       const uploadedAll: any[] = [];
       for (const att of attachmentsToSend) {
         const uploaded = await uploadFile(att.uri, att.filename, att.mimeType, att.size);
-        uploadedAll.push(uploaded);
+        uploadedAll.push({
+          ...uploaded,
+          ...(att.duration != null ? { duration: att.duration } : {}),
+        });
       }
 
       // 2. Send ONE message with all attachments + text/reply together
@@ -1161,6 +1336,52 @@ export default function ConversationScreen() {
     } catch (err: any) {
       console.error('[handlePickVideo]', err?.message ?? err);
       Alert.alert('Lỗi', err?.message ?? 'Không thể chọn video. Vui lòng thử lại.');
+    }
+  };
+
+  // ── Voice recording handler ──────────────────────────────────────────────
+  const handleVoiceRecord = async () => {
+    if (isRecording) {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      setIsRecording(false);
+      try {
+        await audioRecorder.stop();
+        await AudioModule.setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+        const uri = audioRecorder.uri;
+        if (!uri) return;
+        const capturedDuration = recordingDuration;
+        setRecordingDuration(0);
+        const filename = `voice_${Date.now()}.m4a`;
+        const mimeType = 'audio/m4a';
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        const size = fileInfo.exists ? ((fileInfo as any).size ?? 0) : 0;
+        setPendingAttachments((prev) =>
+          [
+            ...prev,
+            { uri, filename, mimeType, size, type: 'audio' as const, duration: capturedDuration },
+          ].slice(0, 5)
+        );
+      } catch (err: any) {
+        Alert.alert('Lỗi', err?.message ?? 'Không thể lưu ghi âm');
+      }
+    } else {
+      const permission = await AudioModule.requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Quyền truy cập', 'Cần quyền microphone để ghi âm tin nhắn thoại.');
+        return;
+      }
+      try {
+        await AudioModule.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await audioRecorder.prepareToRecordAsync();
+        audioRecorder.record();
+        setIsRecording(true);
+        setRecordingDuration(0);
+        recordingTimerRef.current = setInterval(() => {
+          setRecordingDuration((prev) => prev + 1);
+        }, 1000);
+      } catch (err: any) {
+        Alert.alert('Lỗi', err?.message ?? 'Không thể bắt đầu ghi âm');
+      }
     }
   };
 
@@ -1744,19 +1965,59 @@ export default function ConversationScreen() {
                 {/* Document picker */}
                 <TouchableOpacity
                   onPress={handlePickDocument}
-                  className="w-9 h-9 items-center justify-center mr-1"
+                  className="w-9 h-9 items-center justify-center mr-0.5"
                 >
                   <FileText size={19} color="#6b7280" />
                 </TouchableOpacity>
-                <TextInput
-                  value={text}
-                  onChangeText={setText}
-                  placeholder="Nhập tin nhắn..."
-                  multiline
-                  maxLength={2000}
-                  className="flex-1 bg-gray-50 rounded-2xl px-4 py-2.5 text-[14px] max-h-[100px] border border-gray-100"
-                  placeholderTextColor="#9ca3af"
-                />
+                {/* Voice recording button */}
+                <TouchableOpacity
+                  onPress={handleVoiceRecord}
+                  className="w-9 h-9 items-center justify-center mr-1"
+                  style={isRecording ? { backgroundColor: '#ef4444', borderRadius: 18 } : undefined}
+                >
+                  {isRecording ? (
+                    <Square size={16} color="#fff" fill="#fff" />
+                  ) : (
+                    <Mic size={19} color="#6b7280" />
+                  )}
+                </TouchableOpacity>
+                {/* Recording indicator */}
+                {isRecording ? (
+                  <View
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#fef2f2',
+                      borderRadius: 20,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      gap: 8,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: '#ef4444',
+                      }}
+                    />
+                    <Text style={{ fontSize: 13, color: '#ef4444', fontWeight: '500' }}>
+                      Đang ghi âm... {fmtDuration(recordingDuration)}
+                    </Text>
+                  </View>
+                ) : (
+                  <TextInput
+                    value={text}
+                    onChangeText={setText}
+                    placeholder="Nhập tin nhắn..."
+                    multiline
+                    maxLength={2000}
+                    className="flex-1 bg-gray-50 rounded-2xl px-4 py-2.5 text-[14px] max-h-[100px] border border-gray-100"
+                    placeholderTextColor="#9ca3af"
+                  />
+                )}
                 {text.trim().length > 0 && (
                   <TouchableOpacity
                     onPress={() => {
@@ -1809,14 +2070,14 @@ export default function ConversationScreen() {
                             width: 72,
                             height: 72,
                             borderRadius: 8,
-                            backgroundColor: '#1f2937',
+                            backgroundColor: att.type === 'audio' ? '#0c0f1a' : '#1f2937',
                             alignItems: 'center',
                             justifyContent: 'center',
                             paddingHorizontal: 4,
                           }}
                         >
                           <Text style={{ color: '#9ca3af', fontSize: 18 }}>
-                            {att.type === 'video' ? '🎬' : '📄'}
+                            {att.type === 'video' ? '🎬' : att.type === 'audio' ? '🎙️' : '📄'}
                           </Text>
                           <Text
                             style={{

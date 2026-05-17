@@ -1,7 +1,7 @@
 import authorizedAxios from '@/api/authorizedAxios';
 import * as FileSystem from 'expo-file-system/legacy';
 
-export type FileCategory = 'image' | 'video' | 'file';
+export type FileCategory = 'image' | 'video' | 'file' | 'audio';
 
 export interface UploadedAttachment {
   url: string;
@@ -16,19 +16,22 @@ export const FILE_SIZE_LIMITS: Record<FileCategory, number> = {
   image: 10 * 1024 * 1024, // 10 MB
   video: 50 * 1024 * 1024, // 50 MB
   file: 20 * 1024 * 1024, // 20 MB (backend document limit)
+  audio: 10 * 1024 * 1024, // 10 MB
 };
 
 /** Attachment type used in message bubbles (mobile-facing) */
 export function getCategory(mimeType: string): FileCategory {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'audio';
   return 'file';
 }
 
 /** Upload category expected by the backend API */
-function getUploadCategory(mimeType: string): 'image' | 'video' | 'document' {
+function getUploadCategory(mimeType: string): 'image' | 'video' | 'document' | 'audio' {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
+  if (mimeType.startsWith('audio/')) return 'audio';
   return 'document';
 }
 
