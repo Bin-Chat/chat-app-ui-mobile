@@ -1,11 +1,7 @@
 import authorizedAxios from '@/api/authorizedAxios';
 import * as FileSystem from 'expo-file-system/legacy';
 
-<<<<<<< HEAD
 export type FileCategory = 'image' | 'video' | 'file' | 'audio';
-=======
-export type FileCategory = 'image' | 'video' | 'file' | 'voice';
->>>>>>> 0343b781c54fd18b5c4e92b0d6299692dcfb12af
 
 export interface UploadedAttachment {
   url: string;
@@ -18,43 +14,25 @@ export interface UploadedAttachment {
 }
 
 export const FILE_SIZE_LIMITS: Record<FileCategory, number> = {
-<<<<<<< HEAD
   image: 10 * 1024 * 1024, // 10 MB
   video: 50 * 1024 * 1024, // 50 MB
   file: 20 * 1024 * 1024, // 20 MB (backend document limit)
   audio: 10 * 1024 * 1024, // 10 MB
-=======
-  image: 10 * 1024 * 1024,  // 10 MB
-  video: 50 * 1024 * 1024,  // 50 MB
-  file: 20 * 1024 * 1024,   // 20 MB
-  voice: 10 * 1024 * 1024,  // 10 MB
->>>>>>> 0343b781c54fd18b5c4e92b0d6299692dcfb12af
 };
 
 /** Attachment type used in message bubbles (mobile-facing) */
 export function getCategory(mimeType: string): FileCategory {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
-<<<<<<< HEAD
   if (mimeType.startsWith('audio/')) return 'audio';
-=======
-  if (mimeType.startsWith('audio/')) return 'voice';
->>>>>>> 0343b781c54fd18b5c4e92b0d6299692dcfb12af
   return 'file';
 }
 
 /** Upload category expected by the backend API */
-<<<<<<< HEAD
 function getUploadCategory(mimeType: string): 'image' | 'video' | 'document' | 'audio' {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   if (mimeType.startsWith('audio/')) return 'audio';
-=======
-function getUploadCategory(mimeType: string): 'image' | 'video' | 'document' | 'voice' {
-  if (mimeType.startsWith('image/')) return 'image';
-  if (mimeType.startsWith('video/')) return 'video';
-  if (mimeType.startsWith('audio/')) return 'voice';
->>>>>>> 0343b781c54fd18b5c4e92b0d6299692dcfb12af
   return 'document';
 }
 

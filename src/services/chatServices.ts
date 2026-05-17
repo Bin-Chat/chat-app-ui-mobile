@@ -139,4 +139,22 @@ export const chatServices = {
 
   markAsRead: (conversationId: string) =>
     authorizedAxios.post(`/api/chat/conversations/${conversationId}/read`).then((r) => r.data),
+
+  getConversationMedia: (
+    conversationId: string,
+    type: 'image' | 'file' | 'link',
+    cursor?: string
+  ) =>
+    authorizedAxios
+      .get(`/api/chat/conversations/${conversationId}/media`, {
+        params: { type, cursor, limit: 20 },
+      })
+      .then(
+        (r) =>
+          r.data as {
+            items: Record<string, unknown>[];
+            hasMore: boolean;
+            nextCursor: string | null;
+          }
+      ),
 };

@@ -104,7 +104,7 @@ function AudioMessageBubble({
 
   // Lazy load: start with null, replace on first play tap
   const [loaded, setLoaded] = React.useState(false);
-  const player = useAudioPlayer(loaded && !isUnsupported ? url : null, 100);
+  const player = useAudioPlayer(loaded && !isUnsupported ? url : null, { updateInterval: 100 });
 
   const currentSecs = Number.isFinite(player.currentTime) ? Math.floor(player.currentTime) : 0;
   const totalSecs =
@@ -1071,7 +1071,7 @@ export default function ConversationScreen() {
         conversationId,
         callType,
         participantIds,
-        callerName: user.fullName ?? user.username ?? 'Bạn',
+        callerName: user.fullName ?? 'Bạn',
         callerAvatar: user.avatar,
       });
 
@@ -1311,7 +1311,6 @@ export default function ConversationScreen() {
         mediaTypes: 'videos' as ImagePicker.MediaType,
         selectionLimit: 1,
         videoMaxDuration: 120,
-        copyToCacheDirectory: true,
       });
       if (result.canceled) return;
 
@@ -1765,6 +1764,14 @@ export default function ConversationScreen() {
         {conversation?.type === 'group' && (
           <TouchableOpacity
             onPress={() => router.push(`/group-info/${conversationId}`)}
+            className="w-9 h-9 items-center justify-center"
+          >
+            <Info size={20} color="#6b7280" />
+          </TouchableOpacity>
+        )}
+        {conversation?.type === 'direct' && (
+          <TouchableOpacity
+            onPress={() => router.push(`/conversation/info/${conversationId}`)}
             className="w-9 h-9 items-center justify-center"
           >
             <Info size={20} color="#6b7280" />

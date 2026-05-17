@@ -10,6 +10,8 @@ import {
   Modal,
   ScrollView,
   Image,
+  Linking,
+  Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,12 +23,17 @@ import {
   LogOut,
   Trash2,
   ChevronRight,
+  ChevronDown,
   X,
   Search,
   Check,
   Edit2,
   Camera,
   Ban,
+  FileText,
+  Link,
+  Image as ImageIcon,
+  Download,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -63,6 +70,299 @@ function RoleBadge({ role }: { role: string }) {
       </View>
     );
   return null;
+}
+
+// ── Media Sections ──────────────────────────────────────────────────────────
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const THUMB_SIZE = Math.floor((SCREEN_WIDTH - 48) / 3);
+
+function formatBytes(bytes?: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function MediaCollapsible({
+  title,
+  icon,
+  children,
+  defaultOpen,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  return (
+    <View className="border-t border-gray-100">
+      <TouchableOpacity
+        className="flex-row items-center justify-between px-4 py-3"
+        onPress={() => setOpen((v) => !v)}
+        activeOpacity={0.7}
+      >
+        <View className="flex-row items-center gap-2">
+          {icon}
+          <Text className="text-[14px] font-semibold text-gray-700 ml-2">{title}</Text>
+        </View>
+        {open ? (
+          <ChevronDown size={16} color="#9ca3af" />
+        ) : (
+          <ChevronRight size={16} color="#9ca3af" />
+        )}
+      </TouchableOpacity>
+      {open && <View className="px-4 pb-4">{children}</View>}
+    </View>
+  );
+}
+
+function ConversationMediaSections({ conversationId }: { conversationId: string }) {
+  // ── Images ──
+  const [images, setImages] = useState<any[]>([]);
+  const [imagesMore, setImagesMore] = useState(false);
+  const [imagesCursor, setImagesCursor] = useState<string | null>(null);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const [showAllImages, setShowAllImages] = useState(false);
+
+  const loadImages = useCallback(
+    async (cursor?: string) => {
+      setImagesLoading(true);
+      try {
+        const res = await chatServices.getConversationMedia(conversationId, 'image', cursor);
+        setImages((prev) => (cursor ? [...prev, ...res.items] : res.items));
+        setImagesMore(res.hasMore);
+        setImagesCursor(res.nextCursor);
+      } catch {
+        /* silent */
+      } finally {
+        setImagesLoading(false);
+      }
+    },
+    [conversationId]
+  );
+
+  // ── Files ──
+  const [files, setFiles] = useState<any[]>([]);
+  const [filesMore, setFilesMore] = useState(false);
+  const [filesCursor, setFilesCursor] = useState<string | null>(null);
+  const [filesLoading, setFilesLoading] = useState(false);
+
+  const loadFiles = useCallback(
+    async (cursor?: string) => {
+      setFilesLoading(true);
+      try {
+        const res = await chatServices.getConversationMedia(conversationId, 'file', cursor);
+        setFiles((prev) => (cursor ? [...prev, ...res.items] : res.items));
+        setFilesMore(res.hasMore);
+        setFilesCursor(res.nextCursor);
+      } catch {
+        /* silent */
+      } finally {
+        setFilesLoading(false);
+      }
+    },
+    [conversationId]
+  );
+
+  // ── Links ──
+  const [links, setLinks] = useState<any[]>([]);
+  const [linksMore, setLinksMore] = useState(false);
+  const [linksCursor, setLinksCursor] = useState<string | null>(null);
+  const [linksLoading, setLinksLoading] = useState(false);
+
+  const loadLinks = useCallback(
+    async (cursor?: string) => {
+      setLinksLoading(true);
+      try {
+        const res = await chatServices.getConversationMedia(conversationId, 'link', cursor);
+        setLinks((prev) => (cursor ? [...prev, ...res.items] : res.items));
+        setLinksMore(res.hasMore);
+        setLinksCursor(res.nextCursor);
+      } catch {
+        /* silent */
+      } finally {
+        setLinksLoading(false);
+      }
+    },
+    [conversationId]
+  );
+
+  const displayedImages = showAllImages ? images : images.slice(0, 9);
+
+  useEffect(() => {
+    loadImages();
+    loadFiles();
+    loadLinks();
+  }, [loadImages, loadFiles, loadLinks]);
+
+  return (
+    <>
+      {/* Ảnh/Video */}
+      <MediaCollapsible
+        title="Ảnh/Video"
+        icon={<ImageIcon size={16} color="#6b7280" />}
+        defaultOpen={true}
+      >
+        {imagesLoading && images.length === 0 ? (
+          <ActivityIndicator size="small" color="#0068FF" />
+        ) : images.length === 0 && !imagesLoading ? (
+          <Text className="text-[12px] text-gray-400 text-center py-2">Chưa có ảnh/video nào</Text>
+        ) : (
+          <View>
+            <View className="flex-row flex-wrap gap-1">
+              {displayedImages.map((item: any, i: number) => (
+                <TouchableOpacity
+                  key={`${item.messageId}-${i}`}
+                  onPress={() => Linking.openURL(item.url)}
+                  activeOpacity={0.8}
+                >
+                  <View
+                    style={{ width: THUMB_SIZE, height: THUMB_SIZE }}
+                    className="rounded-lg overflow-hidden bg-gray-100"
+                  >
+                    <Image
+                      source={{ uri: item.thumbnailUrl ?? item.url }}
+                      style={{ width: THUMB_SIZE, height: THUMB_SIZE }}
+                      resizeMode="cover"
+                    />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {!showAllImages && images.length > 9 && (
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAllImages(true);
+                  if (imagesMore) loadImages(imagesCursor ?? undefined);
+                }}
+                className="mt-2"
+              >
+                <Text className="text-[13px] text-[#0068FF] text-center">
+                  Xem tất cả ({images.length}
+                  {imagesMore ? '+' : ''})
+                </Text>
+              </TouchableOpacity>
+            )}
+            {showAllImages && imagesMore && (
+              <TouchableOpacity
+                onPress={() => loadImages(imagesCursor ?? undefined)}
+                disabled={imagesLoading}
+                className="mt-2"
+              >
+                <Text className="text-[13px] text-[#0068FF] text-center">
+                  {imagesLoading ? 'Đang tải...' : 'Tải thêm'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+        {images.length === 0 && !imagesLoading && (
+          <TouchableOpacity onPress={() => loadImages()} className="py-1">
+            <Text className="text-[12px] text-[#0068FF] text-center">Tải</Text>
+          </TouchableOpacity>
+        )}
+      </MediaCollapsible>
+
+      {/* File */}
+      <MediaCollapsible title="File" icon={<FileText size={16} color="#6b7280" />}>
+        {filesLoading && files.length === 0 ? (
+          <ActivityIndicator size="small" color="#0068FF" />
+        ) : files.length === 0 && !filesLoading ? (
+          <Text className="text-[12px] text-gray-400 text-center py-2">Chưa có file nào</Text>
+        ) : (
+          <View>
+            {files.map((item: any, i: number) => (
+              <TouchableOpacity
+                key={`${item.messageId}-${i}`}
+                className="flex-row items-center py-2.5 border-b border-gray-50"
+                onPress={() => Linking.openURL(item.url)}
+                activeOpacity={0.7}
+              >
+                <View className="w-9 h-9 rounded-xl bg-blue-50 items-center justify-center mr-3">
+                  <FileText size={18} color="#0068FF" />
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="text-[13px] font-medium text-gray-800" numberOfLines={1}>
+                    {item.filename}
+                  </Text>
+                  <Text className="text-[11px] text-gray-400">
+                    {formatBytes(item.size)} · {formatDate(item.createdAt)}
+                  </Text>
+                </View>
+                <Download size={16} color="#9ca3af" />
+              </TouchableOpacity>
+            ))}
+            {filesMore && (
+              <TouchableOpacity
+                onPress={() => loadFiles(filesCursor ?? undefined)}
+                disabled={filesLoading}
+                className="mt-2"
+              >
+                <Text className="text-[13px] text-[#0068FF] text-center">
+                  {filesLoading ? 'Đang tải...' : 'Tải thêm'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+        {files.length === 0 && !filesLoading && (
+          <TouchableOpacity onPress={() => loadFiles()} className="py-1">
+            <Text className="text-[12px] text-[#0068FF] text-center">Tải</Text>
+          </TouchableOpacity>
+        )}
+      </MediaCollapsible>
+
+      {/* Link */}
+      <MediaCollapsible title="Link" icon={<Link size={16} color="#6b7280" />}>
+        {linksLoading && links.length === 0 ? (
+          <ActivityIndicator size="small" color="#0068FF" />
+        ) : links.length === 0 && !linksLoading ? (
+          <Text className="text-[12px] text-gray-400 text-center py-2">Chưa có link nào</Text>
+        ) : (
+          <View>
+            {links.map((item: any, i: number) => (
+              <TouchableOpacity
+                key={`${item.messageId}-${i}`}
+                className="flex-row items-center py-2.5 border-b border-gray-50"
+                onPress={() => Linking.openURL(item.url)}
+                activeOpacity={0.7}
+              >
+                <View className="w-9 h-9 rounded-xl bg-green-50 items-center justify-center mr-3">
+                  <Link size={18} color="#16a34a" />
+                </View>
+                <View className="flex-1 min-w-0">
+                  <Text className="text-[13px] font-medium text-[#0068FF]" numberOfLines={1}>
+                    {item.domain}
+                  </Text>
+                  <Text className="text-[11px] text-gray-400" numberOfLines={1}>
+                    {item.url}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            {linksMore && (
+              <TouchableOpacity
+                onPress={() => loadLinks(linksCursor ?? undefined)}
+                disabled={linksLoading}
+                className="mt-2"
+              >
+                <Text className="text-[13px] text-[#0068FF] text-center">
+                  {linksLoading ? 'Đang tải...' : 'Tải thêm'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </MediaCollapsible>
+    </>
+  );
 }
 
 export default function GroupInfoScreen() {
@@ -571,6 +871,9 @@ export default function GroupInfoScreen() {
           </View>
         )}
 
+        {/* Media / File / Link */}
+        <ConversationMediaSections conversationId={conversationId} />
+
         {/* Actions */}
         <View className="mt-4 border-t border-gray-100 pt-2 pb-8">
           {!isOwner && (
@@ -782,7 +1085,6 @@ function EditGroupModal({
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
-      copyToCacheDirectory: true,
     });
     if (result.canceled) return;
     const asset = result.assets[0];
