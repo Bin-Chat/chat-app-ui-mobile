@@ -25,10 +25,15 @@
     "axios": "^1.6.2",
     "date-fns": "^3.6.0",
     "expo": "~54.0.0",
+<<<<<<< HEAD
     "expo-audio": "~1.1.1",
+=======
+    "expo-av": "~15.0.2",
+>>>>>>> 0343b781c54fd18b5c4e92b0d6299692dcfb12af
     "expo-constants": "~18.0.13",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",
+    "expo-haptics": "~14.0.1",
     "expo-image-picker": "~17.0.10",
     "expo-linking": "~8.0.11",
     "expo-router": "~6.0.23",
