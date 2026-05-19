@@ -45,6 +45,7 @@ import { chatServices } from '@/services/chatServices';
 import { uploadFile } from '@/services/uploadService';
 import type { Participant } from '@/types/chat';
 import type { FriendItem } from '@/types/friend';
+import ReminderListModal from '@/components/ReminderListModal';
 
 // ── Role helpers ──
 const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, member: 2 };
@@ -392,6 +393,7 @@ export default function GroupInfoScreen() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Participant | null>(null);
+  const [showReminderList, setShowReminderList] = useState(false);
 
   // Current user's role
   const myRole = useMemo(
@@ -874,7 +876,23 @@ export default function GroupInfoScreen() {
         {/* Media / File / Link */}
         <ConversationMediaSections conversationId={conversationId} />
 
-        {/* Actions */}
+        {/* Bảng tin nhóm */}
+        <View className="mt-2 border-t border-gray-100">
+          <Text className="px-4 py-2 text-[13px] text-gray-500 font-medium uppercase">
+            Bảng tin nhóm
+          </Text>
+          <TouchableOpacity
+            className="flex-row items-center px-4 py-3"
+            onPress={() => setShowReminderList(true)}
+            activeOpacity={0.7}
+          >
+            <View className="w-9 h-9 rounded-full bg-blue-50 items-center justify-center mr-3">
+              <Text style={{ fontSize: 18 }}>⏰</Text>
+            </View>
+            <Text className="flex-1 text-[15px] text-gray-800">Danh sách nhắc hẹn</Text>
+            <ChevronRight size={16} color="#d1d5db" />
+          </TouchableOpacity>
+        </View>
         <View className="mt-4 border-t border-gray-100 pt-2 pb-8">
           {!isOwner && (
             <TouchableOpacity onPress={handleLeave} className="flex-row items-center px-4 py-3.5">
@@ -923,6 +941,15 @@ export default function GroupInfoScreen() {
             setShowEditGroup(false);
           }}
           onClose={() => setShowEditGroup(false)}
+        />
+      )}
+
+      {/* Reminder list modal */}
+      {showReminderList && (
+        <ReminderListModal
+          conversationId={conversationId}
+          currentUserId={user?.id ?? ''}
+          onClose={() => setShowReminderList(false)}
         />
       )}
     </SafeAreaView>

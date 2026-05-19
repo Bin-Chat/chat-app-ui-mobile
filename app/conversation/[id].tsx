@@ -52,6 +52,12 @@ import {
   Square,
   Play,
   Pause,
+  Bell,
+  ThumbsUp,
+  ThumbsDown,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
 } from 'lucide-react-native';
 
 import { useChatStore } from '@/store/chatStore';
@@ -200,6 +206,385 @@ function AudioMessageBubble({
         )}
       </View>
       <Mic size={14} color={isMine ? 'rgba(255,255,255,0.5)' : '#9ca3af'} />
+    </View>
+  );
+}
+
+// ── Mobile Reminder Card ──
+
+interface ReminderMeta {
+  type: 'reminder_created';
+  reminderId: string;
+  content: string;
+  remindAt: string;
+  repeat: string;
+  createdBy: string;
+}
+
+function MobileReminderCard({
+  metadata,
+  conversationId,
+  currentUserId,
+  currentUserName,
+}: {
+  metadata: ReminderMeta;
+  conversationId: string;
+  currentUserId: string;
+  currentUserName: string;
+}) {
+  const [reminder, setReminder] = React.useState<any>(undefined);
+  const [showEdit, setShowEdit] = React.useState(false);
+  const [rsvpLoading, setRsvpLoading] = React.useState(false);
+
+  // Fetch reminder on mount
+  React.useEffect(() => {
+    chatServices
+      .getReminders(conversationId)
+      .then((list: any[]) => {
+        const found = list.find((r: any) => r._id === metadata.reminderId);
+        setReminder(found ?? null);
+      })
+      .catch(() => setReminder(null));
+  }, [metadata.reminderId, conversationId]);
+
+  // Sync via DeviceEventEmitter
+  React.useEffect(() => {
+    const { DeviceEventEmitter: DEE } = require('react-native');
+    const subUpdated = DEE.addListener('reminder:updated', (payload: any) => {
+      if (payload?.reminder?._id === metadata.reminderId) setReminder(payload.reminder);
+    });
+    const subDeleted = DEE.addListener('reminder:deleted', (payload: any) => {
+      if (payload?.reminderId === metadata.reminderId) setReminder(null);
+    });
+    return () => {
+      subUpdated.remove();
+      subDeleted.remove();
+    };
+  }, [metadata.reminderId]);
+
+  const isOwner = metadata.createdBy === currentUserId;
+  const data = reminder;
+  const remindAt = new Date((data ?? metadata).remindAt);
+  const d = remindAt;
+  const DAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  const MONTHS = [
+    'Th1',
+    'Th2',
+    'Th3',
+    'Th4',
+    'Th5',
+    'Th6',
+    'Th7',
+    'Th8',
+    'Th9',
+    'Th10',
+    'Th11',
+    'Th12',
+  ];
+  const dayName = DAYS[d.getDay()];
+  const dayNum = d.getDate();
+  const monthStr = MONTHS[d.getMonth()];
+  const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+  const rsvps: any[] = data?.rsvps ?? [];
+  const myRsvp = rsvps.find((r: any) => r.userId === currentUserId);
+  const yesCount = rsvps.filter((r: any) => r.status === 'yes').length;
+  const noCount = rsvps.filter((r: any) => r.status === 'no').length;
+  const yesNames = rsvps
+    .filter((r: any) => r.status === 'yes')
+    .map((r: any) => r.name || 'Ẩn danh');
+  const noNames = rsvps.filter((r: any) => r.status === 'no').map((r: any) => r.name || 'Ẩn danh');
+
+  const handleRsvp = async (status: 'yes' | 'no') => {
+    if (rsvpLoading || !data) return;
+    setRsvpLoading(true);
+    try {
+      const updated = await chatServices.rsvpReminder(data._id, status, currentUserName);
+      setReminder(updated);
+      const { DeviceEventEmitter: DEE } = require('react-native');
+      DEE.emit('reminder:updated', { reminder: updated });
+    } catch {
+      Alert.alert('Lỗi', 'Không thể cập nhật RSVP');
+    } finally {
+      setRsvpLoading(false);
+    }
+  };
+
+  const handleDelete = () => {
+    Alert.alert('Xóa nhắc hẹn', 'Bạn có chắc muốn xóa nhắc hẹn này?', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await chatServices.deleteReminder(metadata.reminderId);
+            setReminder(null);
+            const { DeviceEventEmitter: DEE } = require('react-native');
+            DEE.emit('reminder:deleted', { reminderId: metadata.reminderId });
+          } catch {
+            Alert.alert('Lỗi', 'Không thể xóa nhắc hẹn');
+          }
+        },
+      },
+    ]);
+  };
+
+  if (reminder === null) {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 4, paddingHorizontal: 16 }}>
+        <View
+          style={{
+            backgroundColor: '#f3f4f6',
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+          }}
+        >
+          <Text style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>
+            Nhắc hẹn đã bị xóa
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12 }}>
+      <View
+        style={{
+          width: '100%',
+          maxWidth: 320,
+          backgroundColor: '#fff',
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: '#e5e7eb',
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.06,
+          shadowRadius: 4,
+          elevation: 2,
+        }}
+      >
+        {/* Header bar */}
+        <View
+          style={{
+            backgroundColor: '#0068FF',
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            gap: 8,
+          }}
+        >
+          <Bell size={15} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600', flex: 1 }}>Nhắc hẹn</Text>
+          {data?.repeat && data.repeat !== 'none' && (
+            <View
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.25)',
+                borderRadius: 8,
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 10 }}>
+                {data.repeat === 'daily'
+                  ? 'Hàng ngày'
+                  : data.repeat === 'weekly'
+                    ? 'Hàng tuần'
+                    : 'Hàng tháng'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Body */}
+        <View style={{ padding: 14, flexDirection: 'row', gap: 12 }}>
+          {/* Calendar block */}
+          <View style={{ width: 52, alignItems: 'center' }}>
+            <View
+              style={{
+                backgroundColor: '#eff6ff',
+                borderRadius: 10,
+                width: 52,
+                overflow: 'hidden',
+              }}
+            >
+              <View
+                style={{ backgroundColor: '#0068FF', paddingVertical: 3, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>{dayName}</Text>
+              </View>
+              <View style={{ alignItems: 'center', paddingVertical: 4 }}>
+                <Text style={{ fontSize: 22, fontWeight: '700', color: '#0068FF', lineHeight: 26 }}>
+                  {dayNum}
+                </Text>
+                <Text style={{ fontSize: 9, color: '#6b7280' }}>{monthStr}</Text>
+              </View>
+            </View>
+            <Text style={{ marginTop: 4, fontSize: 12, fontWeight: '600', color: '#0068FF' }}>
+              {timeStr}
+            </Text>
+          </View>
+
+          {/* Content */}
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{ fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 6 }}
+              numberOfLines={3}
+            >
+              {(data ?? metadata).content}
+            </Text>
+            {/* RSVP summary */}
+            {rsvps.length > 0 && (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <ThumbsUp size={12} color="#22c55e" />
+                  <Text style={{ fontSize: 11, color: '#22c55e' }}>{yesCount}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <ThumbsDown size={12} color="#ef4444" />
+                  <Text style={{ fontSize: 11, color: '#ef4444' }}>{noCount}</Text>
+                </View>
+              </View>
+            )}
+            {rsvps.length > 0 && (
+              <View style={{ gap: 6, marginBottom: 8 }}>
+                {yesNames.length > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4 }}>
+                    <Text style={{ fontSize: 11, color: '#16a34a', fontWeight: '600' }}>
+                      Tham gia:
+                    </Text>
+                    <Text style={{ flex: 1, fontSize: 11, color: '#166534' }} numberOfLines={2}>
+                      {yesNames.join(', ')}
+                    </Text>
+                  </View>
+                )}
+                {noNames.length > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4 }}>
+                    <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '600' }}>
+                      Từ chối:
+                    </Text>
+                    <Text style={{ flex: 1, fontSize: 11, color: '#991b1b' }} numberOfLines={2}>
+                      {noNames.join(', ')}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+            {/* RSVP buttons */}
+            {data && (
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <TouchableOpacity
+                  onPress={() => handleRsvp('yes')}
+                  disabled={rsvpLoading}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 4,
+                    paddingVertical: 7,
+                    borderRadius: 8,
+                    backgroundColor: myRsvp?.status === 'yes' ? '#22c55e' : '#f0fdf4',
+                    borderWidth: 1,
+                    borderColor: myRsvp?.status === 'yes' ? '#22c55e' : '#bbf7d0',
+                  }}
+                >
+                  <ThumbsUp size={13} color={myRsvp?.status === 'yes' ? '#fff' : '#22c55e'} />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '600',
+                      color: myRsvp?.status === 'yes' ? '#fff' : '#22c55e',
+                    }}
+                  >
+                    Tham gia
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleRsvp('no')}
+                  disabled={rsvpLoading}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 4,
+                    paddingVertical: 7,
+                    borderRadius: 8,
+                    backgroundColor: myRsvp?.status === 'no' ? '#ef4444' : '#fff1f2',
+                    borderWidth: 1,
+                    borderColor: myRsvp?.status === 'no' ? '#ef4444' : '#fecdd3',
+                  }}
+                >
+                  <ThumbsDown size={13} color={myRsvp?.status === 'no' ? '#fff' : '#ef4444'} />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '600',
+                      color: myRsvp?.status === 'no' ? '#fff' : '#ef4444',
+                    }}
+                  >
+                    Từ chối
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Owner actions */}
+        {isOwner && data && (
+          <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#f3f4f6' }}>
+            <TouchableOpacity
+              onPress={() => setShowEdit(true)}
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                paddingVertical: 10,
+              }}
+            >
+              <Pencil size={14} color="#6366f1" />
+              <Text style={{ fontSize: 13, color: '#6366f1', fontWeight: '500' }}>Chỉnh sửa</Text>
+            </TouchableOpacity>
+            <View style={{ width: 1, backgroundColor: '#f3f4f6' }} />
+            <TouchableOpacity
+              onPress={handleDelete}
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                paddingVertical: 10,
+              }}
+            >
+              <Trash2 size={14} color="#ef4444" />
+              <Text style={{ fontSize: 13, color: '#ef4444', fontWeight: '500' }}>Xóa</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {showEdit && data && (
+        <CreateReminderModal
+          conversationId={conversationId}
+          onClose={() => setShowEdit(false)}
+          onSaved={(updated: any) => {
+            setReminder(updated);
+            setShowEdit(false);
+            const { DeviceEventEmitter: DEE } = require('react-native');
+            DEE.emit('reminder:updated', { reminder: updated });
+          }}
+          editTarget={data}
+        />
+      )}
     </View>
   );
 }
@@ -537,7 +922,7 @@ function MessageBubble({
                             justifyContent: 'center',
                           }}
                         >
-                          <Text style={{ color: '#fff', fontSize: 20, paddingLeft: 4 }}>▶</Text>
+                          <Play size={22} color="#fff" fill="#fff" />
                         </View>
                       </View>
                     </View>
@@ -729,7 +1114,7 @@ function MessageBubble({
                           justifyContent: 'center',
                         }}
                       >
-                        <Text style={{ color: '#fff', fontSize: 18, paddingLeft: 4 }}>▶</Text>
+                        <Play size={20} color="#fff" fill="#fff" />
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -824,7 +1209,7 @@ function MessageBubble({
               className="absolute top-12 right-4 z-10 w-10 h-10 bg-black/60 rounded-full items-center justify-center"
               onPress={() => setLightboxIdx(null)}
             >
-              <Text className="text-white text-lg">✕</Text>
+              <X size={20} color="#fff" />
             </TouchableOpacity>
             <Image
               source={{ uri: images[lightboxIdx]?.url }}
@@ -835,14 +1220,18 @@ function MessageBubble({
               <View className="flex-row items-center gap-4 mt-4">
                 <TouchableOpacity
                   onPress={() => setLightboxIdx((lightboxIdx - 1 + images.length) % images.length)}
+                  className="w-12 h-12 items-center justify-center"
                 >
-                  <Text className="text-white text-2xl px-4">←</Text>
+                  <ChevronLeft size={32} color="#fff" />
                 </TouchableOpacity>
                 <Text className="text-white">
                   {lightboxIdx + 1} / {images.length}
                 </Text>
-                <TouchableOpacity onPress={() => setLightboxIdx((lightboxIdx + 1) % images.length)}>
-                  <Text className="text-white text-2xl px-4">→</Text>
+                <TouchableOpacity
+                  onPress={() => setLightboxIdx((lightboxIdx + 1) % images.length)}
+                  className="w-12 h-12 items-center justify-center"
+                >
+                  <ChevronRight size={32} color="#fff" />
                 </TouchableOpacity>
               </View>
             )}
@@ -1574,6 +1963,18 @@ export default function ConversationScreen() {
   }, [conversationId, hasMore, loadingMessages, messages]);
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    // ── Reminder card ─────────────────────────────────────────────────────
+    if (item.metadata?.type === 'reminder_created') {
+      return (
+        <MobileReminderCard
+          metadata={item.metadata as ReminderMeta}
+          conversationId={conversationId}
+          currentUserId={user?.id ?? ''}
+          currentUserName={user?.fullName ?? ''}
+        />
+      );
+    }
+
     // System messages (call events, group events)
     // Note: call messages sent via chatServices.sendMessage() have type='system' but
     // senderId = actual user ID (not 'system'), so we must check both fields.
@@ -2083,9 +2484,13 @@ export default function ConversationScreen() {
                             paddingHorizontal: 4,
                           }}
                         >
-                          <Text style={{ color: '#9ca3af', fontSize: 18 }}>
-                            {att.type === 'video' ? '🎬' : att.type === 'audio' ? '🎙️' : '📄'}
-                          </Text>
+                          {att.type === 'video' ? (
+                            <VideoIcon size={24} color="#9ca3af" />
+                          ) : att.type === 'audio' ? (
+                            <Mic size={24} color="#9ca3af" />
+                          ) : (
+                            <FileText size={24} color="#9ca3af" />
+                          )}
                           <Text
                             style={{
                               color: '#9ca3af',
@@ -2116,7 +2521,7 @@ export default function ConversationScreen() {
                           justifyContent: 'center',
                         }}
                       >
-                        <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>✕</Text>
+                        <X size={10} color="#fff" strokeWidth={3} />
                       </TouchableOpacity>
                     </View>
                   ))}

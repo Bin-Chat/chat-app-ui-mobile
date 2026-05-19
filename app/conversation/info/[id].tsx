@@ -30,6 +30,7 @@ import { useCallStore } from '@/store/callStore';
 import { UserAvatar } from '@/components/UserAvatar';
 import { chatServices } from '@/services/chatServices';
 import { socketService } from '@/services/socket';
+import ReminderListModal from '@/components/ReminderListModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const THUMB_SIZE = Math.floor((SCREEN_WIDTH - 48) / 3);
@@ -325,6 +326,7 @@ export default function DirectInfoScreen() {
   const friends = useFriendStore((s) => s.friends);
   const conversation = useChatStore((s) => s.conversations.find((c) => c._id === conversationId));
   const callStatus = useCallStore((s) => s.status);
+  const [showReminderList, setShowReminderList] = useState(false);
 
   const otherParticipant = conversation?.participants.find((p) => p.userId !== user?.id);
   const otherUser = friends.find((f) => f.user.id === otherParticipant?.userId)?.user ?? null;
@@ -425,8 +427,31 @@ export default function DirectInfoScreen() {
           <LinkSection conversationId={conversationId} />
         </MediaCollapsible>
 
+        {/* Nhắc hẹn */}
+        <View className="border-t border-gray-100">
+          <TouchableOpacity
+            className="flex-row items-center px-4 py-3.5"
+            onPress={() => setShowReminderList(true)}
+            activeOpacity={0.7}
+          >
+            <View className="w-9 h-9 rounded-full bg-blue-50 items-center justify-center mr-3">
+              <Text style={{ fontSize: 18 }}>⏰</Text>
+            </View>
+            <Text className="flex-1 text-[15px] text-gray-800">Danh sách nhắc hẹn</Text>
+            <ChevronRight size={16} color="#d1d5db" />
+          </TouchableOpacity>
+        </View>
+
         <View className="h-8" />
       </ScrollView>
+
+      {showReminderList && (
+        <ReminderListModal
+          conversationId={conversationId}
+          currentUserId={user?.id ?? ''}
+          onClose={() => setShowReminderList(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }

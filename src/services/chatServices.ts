@@ -157,4 +157,33 @@ export const chatServices = {
             nextCursor: string | null;
           }
       ),
+
+  // ── Reminders ──────────────────────────────────────────────────────
+
+  createReminder: (
+    conversationId: string,
+    payload: { content: string; remindAt: string; repeat?: string }
+  ) =>
+    authorizedAxios
+      .post(`/api/chat/conversations/${conversationId}/reminders`, payload)
+      .then((r) => r.data),
+
+  getReminders: (conversationId: string) =>
+    authorizedAxios.get(`/api/chat/conversations/${conversationId}/reminders`).then((r) => r.data),
+
+  updateReminder: (
+    reminderId: string,
+    payload: { content?: string; remindAt?: string; repeat?: string }
+  ) => authorizedAxios.patch(`/api/chat/reminders/${reminderId}`, payload).then((r) => r.data),
+
+  deleteReminder: (reminderId: string) =>
+    authorizedAxios.delete(`/api/chat/reminders/${reminderId}`).then((r) => r.data),
+
+  completeReminder: (reminderId: string) =>
+    authorizedAxios.post(`/api/chat/reminders/${reminderId}/complete`).then((r) => r.data),
+
+  rsvpReminder: (reminderId: string, status: 'yes' | 'no', name: string) =>
+    authorizedAxios
+      .post(`/api/chat/reminders/${reminderId}/rsvp`, { status, name })
+      .then((r) => r.data),
 };

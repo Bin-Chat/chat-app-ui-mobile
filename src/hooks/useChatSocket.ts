@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Alert, DeviceEventEmitter } from 'react-native';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { useFriendStore } from '@/store/friendStore';
@@ -12,8 +13,10 @@ interface MessageCreatedPayload {
   conversationId: string;
   senderId: string;
   content?: string;
+  type?: string;
   attachments?: Message['attachments'];
   replyTo?: Message['replyTo'];
+  metadata?: Record<string, any>;
   createdAt: string;
 }
 
@@ -71,8 +74,10 @@ export function useChatSocket() {
         _id: payload.messageId,
         conversationId: payload.conversationId,
         senderId: payload.senderId,
+        type: payload.type,
         content: payload.content ?? '',
         attachments: payload.attachments ?? [],
+        metadata: payload.metadata,
         deletedFor: [],
         revokedAt: null,
         forwardedFrom: null,
@@ -199,9 +204,28 @@ export function useChatSocket() {
       endCall();
     };
 
+    // ── Reminder events ───────────────────────────────────────────
+    const onReminderFire = (event: any) => {
+      Alert.alert(
+        '⏰ Nhắc hẹn',
+        event.content ?? 'Bạn có một nhắc hẹn!',
+        [{ text: 'OK' }],
+        { cancelable: true },
+      );
+    };
+    const onReminderUpdated = (event: any) => {
+      DeviceEventEmitter.emit('reminder:updated', { reminder: event.reminder });
+    };
+    const onReminderDeleted = (event: any) => {
+      DeviceEventEmitter.emit('reminder:deleted', { reminderId: event.reminderId });
+    };
+
     socketService.on('call:incoming', onCallIncoming);
     socketService.on('call:ended', onCallEnded);
     socketService.on('call:busy', onCallBusy);
+    socketService.on('reminder:fire', onReminderFire);
+    socketService.on('reminder:updated', onReminderUpdated);
+    socketService.on('reminder:deleted', onReminderDeleted);
 
     return () => {
       socketService.off('message:new', onMessageNew);
@@ -221,6 +245,9 @@ export function useChatSocket() {
       socketService.off('call:incoming', onCallIncoming);
       socketService.off('call:ended', onCallEnded);
       socketService.off('call:busy', onCallBusy);
+      socketService.off('reminder:fire', onReminderFire);
+      socketService.off('reminder:updated', onReminderUpdated);
+      socketService.off('reminder:deleted', onReminderDeleted);
     };
   }, [user?.id]);
 }

@@ -34,6 +34,7 @@ export interface Message {
   senderId: string;
   content: string;
   type?: string;
+  metadata?: Record<string, any>;
   attachments: Attachment[];
   deletedFor: string[];
   revokedAt: string | null;
