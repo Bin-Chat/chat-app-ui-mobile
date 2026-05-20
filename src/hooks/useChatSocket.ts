@@ -206,12 +206,9 @@ export function useChatSocket() {
 
     // ── Reminder events ───────────────────────────────────────────
     const onReminderFire = (event: any) => {
-      Alert.alert(
-        '⏰ Nhắc hẹn',
-        event.content ?? 'Bạn có một nhắc hẹn!',
-        [{ text: 'OK' }],
-        { cancelable: true },
-      );
+      Alert.alert('⏰ Nhắc hẹn', event.content ?? 'Bạn có một nhắc hẹn!', [{ text: 'OK' }], {
+        cancelable: true,
+      });
     };
     const onReminderUpdated = (event: any) => {
       DeviceEventEmitter.emit('reminder:updated', { reminder: event.reminder });
@@ -220,12 +217,35 @@ export function useChatSocket() {
       DeviceEventEmitter.emit('reminder:deleted', { reminderId: event.reminderId });
     };
 
+    // ── Note events ───────────────────────────────────────────────
+    const onNoteCreated = (event: any) => {
+      DeviceEventEmitter.emit('note:created', {
+        conversationId: event.conversationId,
+        note: event.note,
+      });
+    };
+    const onNoteUpdated = (event: any) => {
+      DeviceEventEmitter.emit('note:updated', {
+        conversationId: event.conversationId,
+        note: event.note,
+      });
+    };
+    const onNoteDeleted = (event: any) => {
+      DeviceEventEmitter.emit('note:deleted', {
+        conversationId: event.conversationId,
+        noteId: event.noteId,
+      });
+    };
+
     socketService.on('call:incoming', onCallIncoming);
     socketService.on('call:ended', onCallEnded);
     socketService.on('call:busy', onCallBusy);
     socketService.on('reminder:fire', onReminderFire);
     socketService.on('reminder:updated', onReminderUpdated);
     socketService.on('reminder:deleted', onReminderDeleted);
+    socketService.on('note:created', onNoteCreated);
+    socketService.on('note:updated', onNoteUpdated);
+    socketService.on('note:deleted', onNoteDeleted);
 
     return () => {
       socketService.off('message:new', onMessageNew);
@@ -248,6 +268,9 @@ export function useChatSocket() {
       socketService.off('reminder:fire', onReminderFire);
       socketService.off('reminder:updated', onReminderUpdated);
       socketService.off('reminder:deleted', onReminderDeleted);
+      socketService.off('note:created', onNoteCreated);
+      socketService.off('note:updated', onNoteUpdated);
+      socketService.off('note:deleted', onNoteDeleted);
     };
   }, [user?.id]);
 }

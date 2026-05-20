@@ -46,6 +46,7 @@ import { uploadFile } from '@/services/uploadService';
 import type { Participant } from '@/types/chat';
 import type { FriendItem } from '@/types/friend';
 import ReminderListModal from '@/components/ReminderListModal';
+import NoteListModal from '@/components/NoteListModal';
 
 // ── Role helpers ──
 const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, member: 2 };
@@ -394,6 +395,7 @@ export default function GroupInfoScreen() {
   const [showEditGroup, setShowEditGroup] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Participant | null>(null);
   const [showReminderList, setShowReminderList] = useState(false);
+  const [showNoteList, setShowNoteList] = useState(false);
 
   // Current user's role
   const myRole = useMemo(
@@ -892,6 +894,17 @@ export default function GroupInfoScreen() {
             <Text className="flex-1 text-[15px] text-gray-800">Danh sách nhắc hẹn</Text>
             <ChevronRight size={16} color="#d1d5db" />
           </TouchableOpacity>
+          <TouchableOpacity
+            className="flex-row items-center px-4 py-3"
+            onPress={() => setShowNoteList(true)}
+            activeOpacity={0.7}
+          >
+            <View className="w-9 h-9 rounded-full bg-amber-50 items-center justify-center mr-3">
+              <Text style={{ fontSize: 18 }}>📝</Text>
+            </View>
+            <Text className="flex-1 text-[15px] text-gray-800">Ghi chú</Text>
+            <ChevronRight size={16} color="#d1d5db" />
+          </TouchableOpacity>
         </View>
         <View className="mt-4 border-t border-gray-100 pt-2 pb-8">
           {!isOwner && (
@@ -950,6 +963,16 @@ export default function GroupInfoScreen() {
           conversationId={conversationId}
           currentUserId={user?.id ?? ''}
           onClose={() => setShowReminderList(false)}
+        />
+      )}
+
+      {/* Note list modal */}
+      {showNoteList && (
+        <NoteListModal
+          conversationId={conversationId}
+          currentUserId={user?.id ?? ''}
+          isAdmin={isOwner || isAdmin}
+          onClose={() => setShowNoteList(false)}
         />
       )}
     </SafeAreaView>

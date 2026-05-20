@@ -14,6 +14,7 @@ import {
   Modal,
   Dimensions,
   ScrollView,
+  DeviceEventEmitter,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +59,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar,
+  StickyNote,
+  PinOff,
 } from 'lucide-react-native';
 
 import { useChatStore } from '@/store/chatStore';
@@ -68,8 +71,10 @@ import { socketService } from '@/services/socket';
 import { UserAvatar } from '@/components/UserAvatar';
 import { uploadFile, FILE_SIZE_LIMITS, getCategory } from '@/services/uploadService';
 import { chatServices } from '@/services/chatServices';
+import NoteListModal from '@/components/NoteListModal';
 import { aiServices } from '@/services/aiServices';
 import type { Message, Attachment } from '@/types/chat';
+import type { Note } from '@/types/note.type';
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -583,6 +588,293 @@ function MobileReminderCard({
             DEE.emit('reminder:updated', { reminder: updated });
           }}
           editTarget={data}
+        />
+      )}
+    </View>
+  );
+}
+
+// ── Mobile Note Card ──
+
+interface NoteMeta {
+  type: 'note_action';
+  action: 'create' | 'create_pin' | 'pin' | 'unpin' | 'edit' | 'delete';
+  noteId: string;
+  content?: string;
+  actorName: string;
+  isPinned?: boolean;
+}
+
+const NOTE_LABELS: Record<NoteMeta['action'], string> = {
+  create: 'đã tạo ghi chú',
+  create_pin: 'đã tạo và ghim ghi chú',
+  pin: 'đã ghim ghi chú',
+  unpin: 'đã bỏ ghim ghi chú',
+  edit: 'đã chỉnh sửa ghi chú',
+  delete: 'đã xóa ghi chú',
+};
+
+function MobileNoteCard({
+  metadata,
+  conversationId,
+  currentUserId,
+}: {
+  metadata: NoteMeta;
+  conversationId: string;
+  currentUserId: string;
+}) {
+  const [note, setNote] = React.useState<any>(undefined);
+  const [showEdit, setShowEdit] = React.useState(false);
+  const [allNotes, setAllNotes] = React.useState<any[]>([]);
+  const { DeviceEventEmitter: DEE } = require('react-native');
+  const CreateNoteModal = require('@/components/CreateNoteModal').default;
+
+  React.useEffect(() => {
+    chatServices
+      .getNotes(conversationId)
+      .then((list: any[]) => {
+        setAllNotes(list);
+        const found = list.find((n: any) => n._id === metadata.noteId);
+        setNote(found ?? null);
+      })
+      .catch(() => setNote(null));
+  }, [metadata.noteId, conversationId]);
+
+  React.useEffect(() => {
+    const subUpdated = DEE.addListener('note:updated', (payload: any) => {
+      if (payload?.note?._id === metadata.noteId) {
+        setNote(payload.note);
+        setAllNotes((prev: any[]) =>
+          prev.map((n: any) => (n._id === payload.note._id ? payload.note : n))
+        );
+      }
+    });
+    const subDeleted = DEE.addListener('note:deleted', (payload: any) => {
+      if (payload?.noteId === metadata.noteId) setNote(null);
+    });
+    return () => {
+      subUpdated.remove();
+      subDeleted.remove();
+    };
+  }, [metadata.noteId]);
+
+  const label = NOTE_LABELS[metadata.action] ?? 'đã cập nhật ghi chú';
+  const isCreator = note?.createdBy === currentUserId;
+  const pinnedCount = allNotes.filter((n: any) => n.isPinned).length;
+
+  // Delete / unpin — styled amber pill
+  if (metadata.action === 'delete' || metadata.action === 'unpin') {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 6, paddingHorizontal: 16 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
+            backgroundColor: '#f9fafb',
+            borderWidth: 1,
+            borderColor: '#e5e7eb',
+            borderRadius: 20,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+          }}
+        >
+          {metadata.action === 'unpin' ? (
+            <PinOff size={11} color="#9ca3af" />
+          ) : (
+            <StickyNote size={11} color="#9ca3af" />
+          )}
+          <Text style={{ fontSize: 11, color: '#6b7280' }}>
+            <Text style={{ fontWeight: '600', color: '#374151' }}>{metadata.actorName}</Text>{' '}
+            {label}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Note was deleted after card created
+  if (note === null) {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 6, paddingHorizontal: 16 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
+            backgroundColor: '#f9fafb',
+            borderWidth: 1,
+            borderColor: '#e5e7eb',
+            borderRadius: 20,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+          }}
+        >
+          <StickyNote size={11} color="#9ca3af" />
+          <Text style={{ fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}>
+            {metadata.actorName} {label} · Ghi chú đã bị xóa
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12 }}>
+      <View
+        style={{
+          width: '100%',
+          maxWidth: 310,
+          backgroundColor: '#ffffff',
+          borderRadius: 18,
+          borderWidth: 1,
+          borderColor: '#f3f4f6',
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
+          elevation: 3,
+        }}
+      >
+        {/* Top accent stripe */}
+        <View
+          style={{
+            height: 3,
+            backgroundColor: '#fbbf24',
+          }}
+        />
+
+        {/* Header */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 14,
+            paddingTop: 12,
+            paddingBottom: 10,
+            gap: 10,
+          }}
+        >
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: '#fef9c3',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: '#fde68a',
+            }}
+          >
+            <StickyNote size={16} color="#f59e0b" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontSize: 9,
+                color: '#f59e0b',
+                fontWeight: '700',
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                marginBottom: 2,
+              }}
+            >
+              Ghi chú
+            </Text>
+            <Text style={{ fontSize: 12, color: '#6b7280' }} numberOfLines={1}>
+              <Text style={{ fontWeight: '700', color: '#111827' }}>{metadata.actorName}</Text>{' '}
+              {label}
+            </Text>
+          </View>
+          {note?.isPinned && (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 3,
+                backgroundColor: '#fffbeb',
+                borderWidth: 1,
+                borderColor: '#fde68a',
+                borderRadius: 12,
+                paddingHorizontal: 7,
+                paddingVertical: 4,
+              }}
+            >
+              <Pin size={10} color="#f59e0b" />
+              <Text style={{ fontSize: 10, color: '#d97706', fontWeight: '600' }}>Đã ghim</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Divider */}
+        <View style={{ height: 1, marginHorizontal: 14, backgroundColor: '#fde68a' }} />
+
+        {/* Content */}
+        <View style={{ paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#FFFDF5' }}>
+          {note === undefined ? (
+            <>
+              <View
+                style={{ height: 11, backgroundColor: '#fef3c7', borderRadius: 6, marginBottom: 8 }}
+              />
+              <View
+                style={{
+                  height: 11,
+                  backgroundColor: '#fef3c7',
+                  borderRadius: 6,
+                  width: '80%',
+                  marginBottom: 8,
+                }}
+              />
+              <View
+                style={{ height: 11, backgroundColor: '#fef3c7', borderRadius: 6, width: '60%' }}
+              />
+            </>
+          ) : (
+            <Text style={{ fontSize: 13, color: '#111827', lineHeight: 20 }} numberOfLines={5}>
+              {note.content}
+            </Text>
+          )}
+        </View>
+
+        {/* Footer — edit button */}
+        {note !== undefined && isCreator && (
+          <>
+            <View style={{ height: 1, marginHorizontal: 14, backgroundColor: '#f3f4f6' }} />
+            <TouchableOpacity
+              onPress={() => setShowEdit(true)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+              }}
+            >
+              <Pencil size={13} color="#2563eb" />
+              <Text style={{ fontSize: 12, color: '#2563eb', fontWeight: '600' }}>
+                Chỉnh sửa ghi chú
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      {showEdit && note && (
+        <CreateNoteModal
+          conversationId={conversationId}
+          initialNote={note}
+          pinnedCount={pinnedCount}
+          onClose={() => setShowEdit(false)}
+          onSaved={(updated: any) => {
+            setNote(updated);
+            setAllNotes((prev: any[]) =>
+              prev.map((n: any) => (n._id === updated._id ? updated : n))
+            );
+            setShowEdit(false);
+            DEE.emit('note:updated', { note: updated });
+          }}
         />
       )}
     </View>
@@ -1477,12 +1769,67 @@ export default function ConversationScreen() {
     [callStatus, conversation, conversationId, startCall, user, router]
   );
 
-  // Multi-pin banner cycling
+  // Multi-pin banner cycling (includes pinned messages + pinned notes)
+  const [pinnedNotes, setPinnedNotes] = useState<Note[]>([]);
+  const [showNoteListModal, setShowNoteListModal] = useState(false);
+  useEffect(() => {
+    if (!conversationId) return;
+    let cancelled = false;
+    chatServices
+      .getNotes(conversationId)
+      .then((list: any[]) => {
+        if (!cancelled) setPinnedNotes(list.filter((n: Note) => n.isPinned));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+  useEffect(() => {
+    const upsert = (data: any) => {
+      if (!data?.note || (data.conversationId && data.conversationId !== conversationId)) return;
+      setPinnedNotes((prev) => {
+        const rest = prev.filter((n) => n._id !== data.note._id);
+        return data.note.isPinned ? [data.note, ...rest] : rest;
+      });
+    };
+    const onDeleted = (data: any) => {
+      if (!data?.noteId) return;
+      setPinnedNotes((prev) => prev.filter((n) => n._id !== data.noteId));
+    };
+    const subC = DeviceEventEmitter.addListener('note:created', upsert);
+    const subU = DeviceEventEmitter.addListener('note:updated', upsert);
+    const subD = DeviceEventEmitter.addListener('note:deleted', onDeleted);
+    return () => {
+      subC.remove();
+      subU.remove();
+      subD.remove();
+    };
+  }, [conversationId]);
+
+  type PinnedBannerItem =
+    | { kind: 'message'; id: string; content: string; messageId: string }
+    | { kind: 'note'; id: string; content: string; noteId: string };
+  const allPinned: PinnedBannerItem[] = useMemo(() => {
+    const noteItems: PinnedBannerItem[] = pinnedNotes.map((n) => ({
+      kind: 'note' as const,
+      id: `note:${n._id}`,
+      content: n.content,
+      noteId: n._id,
+    }));
+    const msgItems: PinnedBannerItem[] = pinnedMessages.map((m) => ({
+      kind: 'message' as const,
+      id: `msg:${m._id}`,
+      content: m.content || '[Tệp đính kèm]',
+      messageId: m._id,
+    }));
+    return [...noteItems, ...msgItems];
+  }, [pinnedNotes, pinnedMessages]);
   const [pinnedBannerIdx, setPinnedBannerIdx] = useState(0);
   useEffect(() => {
     setPinnedBannerIdx(0);
-  }, [conversationId, pinnedMessages.length]);
-  const currentPinned = pinnedMessages[pinnedBannerIdx] ?? null;
+  }, [conversationId, allPinned.length]);
+  const currentPinned = allPinned[pinnedBannerIdx] ?? null;
 
   // Zalo-style pin action notification (bottom of message area)
   const [pinNotif, setPinNotif] = useState<{
@@ -1975,7 +2322,16 @@ export default function ConversationScreen() {
       );
     }
 
-    // System messages (call events, group events)
+    // ── Note card ─────────────────────────────────────────────────────────
+    if (item.metadata?.type === 'note_action') {
+      return (
+        <MobileNoteCard
+          metadata={item.metadata as NoteMeta}
+          conversationId={conversationId}
+          currentUserId={user?.id ?? ''}
+        />
+      );
+    }
     // Note: call messages sent via chatServices.sendMessage() have type='system' but
     // senderId = actual user ID (not 'system'), so we must check both fields.
     if (item.senderId === 'system' || item.type === 'system') {
@@ -2057,6 +2413,128 @@ export default function ConversationScreen() {
                 <Text style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
                   {isMissed ? 'Không thành công' : (duration ?? 'Đã kết thúc')}
                 </Text>
+              </View>
+            </View>
+          </View>
+        );
+      }
+
+      // ── Legacy note system messages (no metadata) ───────────────────
+      if (content.includes('ghi chú')) {
+        const isUnpinAction = content.includes('bỏ ghim');
+        const isPinAction = !isUnpinAction && content.includes('ghim');
+        const isDeleteAction = content.includes('xóa');
+
+        // Delete / unpin → simple pill
+        if (isDeleteAction || isUnpinAction) {
+          return (
+            <View style={{ alignItems: 'center', paddingVertical: 6, paddingHorizontal: 16 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                  backgroundColor: '#f9fafb',
+                  borderWidth: 1,
+                  borderColor: '#e5e7eb',
+                  borderRadius: 20,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                }}
+              >
+                {isUnpinAction ? (
+                  <PinOff size={11} color="#9ca3af" />
+                ) : (
+                  <StickyNote size={11} color="#9ca3af" />
+                )}
+                <Text style={{ fontSize: 11, color: '#6b7280' }}>{content}</Text>
+              </View>
+            </View>
+          );
+        }
+
+        // Create / edit / pin → card
+        return (
+          <View style={{ alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12 }}>
+            <View
+              style={{
+                width: '100%',
+                maxWidth: 310,
+                backgroundColor: '#ffffff',
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: '#f3f4f6',
+                overflow: 'hidden',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.07,
+                shadowRadius: 8,
+                elevation: 3,
+              }}
+            >
+              {/* Top accent stripe */}
+              <View style={{ height: 3, backgroundColor: '#fbbf24' }} />
+              {/* Header */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  gap: 10,
+                }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: '#fef9c3',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: '#fde68a',
+                  }}
+                >
+                  <StickyNote size={16} color="#f59e0b" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      color: '#f59e0b',
+                      fontWeight: '700',
+                      letterSpacing: 0.8,
+                      textTransform: 'uppercase',
+                      marginBottom: 2,
+                    }}
+                  >
+                    Ghi chú
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#6b7280' }} numberOfLines={2}>
+                    {content}
+                  </Text>
+                </View>
+                {isPinAction && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 3,
+                      backgroundColor: '#fffbeb',
+                      borderWidth: 1,
+                      borderColor: '#fde68a',
+                      borderRadius: 12,
+                      paddingHorizontal: 7,
+                      paddingVertical: 4,
+                    }}
+                  >
+                    <Pin size={10} color="#f59e0b" />
+                    <Text style={{ fontSize: 10, color: '#d97706', fontWeight: '600' }}>
+                      Đã ghim
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -2223,28 +2701,33 @@ export default function ConversationScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Pinned message banner */}
+      {/* Pinned message/note banner */}
       {currentPinned && (
         <View className="flex-row items-center px-4 py-2 bg-amber-50 border-b border-amber-100">
-          <Pin size={13} color="#f59e0b" />
+          {currentPinned.kind === 'note' ? (
+            <StickyNote size={13} color="#f59e0b" />
+          ) : (
+            <Pin size={13} color="#f59e0b" />
+          )}
           <TouchableOpacity
             className="flex-1 min-w-0 ml-2"
-            onPress={() => handleScrollToMessage(currentPinned._id)}
+            onPress={() => {
+              if (currentPinned.kind === 'note') setShowNoteListModal(true);
+              else handleScrollToMessage(currentPinned.messageId);
+            }}
             activeOpacity={0.7}
           >
             <Text className="text-[10px] font-semibold text-amber-600">
-              Tin nhắn được ghim
-              {pinnedMessages.length > 1
-                ? ` (${pinnedBannerIdx + 1}/${pinnedMessages.length})`
-                : ''}
+              {currentPinned.kind === 'note' ? 'Ghi chú được ghim' : 'Tin nhắn được ghim'}
+              {allPinned.length > 1 ? ` (${pinnedBannerIdx + 1}/${allPinned.length})` : ''}
             </Text>
             <Text className="text-[12px] text-gray-600" numberOfLines={1}>
-              {currentPinned.content || '[Tệp đính kèm]'}
+              {currentPinned.content}
             </Text>
           </TouchableOpacity>
-          {pinnedMessages.length > 1 && (
+          {allPinned.length > 1 && (
             <TouchableOpacity
-              onPress={() => setPinnedBannerIdx((i) => (i + 1) % pinnedMessages.length)}
+              onPress={() => setPinnedBannerIdx((i) => (i + 1) % allPinned.length)}
               className="w-7 h-7 items-center justify-center rounded-full"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -3152,6 +3635,16 @@ export default function ConversationScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      {/* Note list modal (opened from pinned-note banner) */}
+      {showNoteListModal && (
+        <NoteListModal
+          conversationId={conversationId}
+          currentUserId={user?.id ?? ''}
+          isAdmin={isAdminOrOwner}
+          onClose={() => setShowNoteListModal(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }

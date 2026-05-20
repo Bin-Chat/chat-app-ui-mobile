@@ -186,4 +186,19 @@ export const chatServices = {
     authorizedAxios
       .post(`/api/chat/reminders/${reminderId}/rsvp`, { status, name })
       .then((r) => r.data),
+
+  // ── Notes ─────────────────────────────────────────────────────────
+  createNote: (conversationId: string, payload: { content: string; isPinned?: boolean }) =>
+    authorizedAxios
+      .post(`/api/chat/conversations/${conversationId}/notes`, payload)
+      .then((r) => r.data),
+
+  getNotes: (conversationId: string) =>
+    authorizedAxios.get(`/api/chat/conversations/${conversationId}/notes`).then((r) => r.data),
+
+  updateNote: (noteId: string, payload: { content?: string; isPinned?: boolean }) =>
+    authorizedAxios.patch(`/api/chat/notes/${noteId}`, payload).then((r) => r.data),
+
+  deleteNote: (noteId: string) =>
+    authorizedAxios.delete(`/api/chat/notes/${noteId}`).then((r) => r.data),
 };
