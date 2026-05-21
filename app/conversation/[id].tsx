@@ -72,6 +72,7 @@ import { UserAvatar } from '@/components/UserAvatar';
 import { uploadFile, FILE_SIZE_LIMITS, getCategory } from '@/services/uploadService';
 import { chatServices } from '@/services/chatServices';
 import NoteListModal from '@/components/NoteListModal';
+import PollBubble from '@/components/PollBubble';
 import { aiServices } from '@/services/aiServices';
 import type { Message, Attachment } from '@/types/chat';
 import type { Note } from '@/types/note.type';
@@ -2329,6 +2330,17 @@ export default function ConversationScreen() {
           metadata={item.metadata as NoteMeta}
           conversationId={conversationId}
           currentUserId={user?.id ?? ''}
+        />
+      );
+    }
+
+    // ── Poll bubble ───────────────────────────────────────────────────────
+    if (item.type === 'poll' && !item.revokedAt) {
+      return (
+        <PollBubble
+          message={item}
+          conversationId={conversationId}
+          isMine={item.senderId === user?.id}
         />
       );
     }

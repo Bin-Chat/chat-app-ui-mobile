@@ -47,6 +47,7 @@ import type { Participant } from '@/types/chat';
 import type { FriendItem } from '@/types/friend';
 import ReminderListModal from '@/components/ReminderListModal';
 import NoteListModal from '@/components/NoteListModal';
+import CreatePollModal from '@/components/CreatePollModal';
 
 // ── Role helpers ──
 const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, member: 2 };
@@ -396,6 +397,7 @@ export default function GroupInfoScreen() {
   const [selectedMember, setSelectedMember] = useState<Participant | null>(null);
   const [showReminderList, setShowReminderList] = useState(false);
   const [showNoteList, setShowNoteList] = useState(false);
+  const [showCreatePoll, setShowCreatePoll] = useState(false);
 
   // Current user's role
   const myRole = useMemo(
@@ -905,6 +907,17 @@ export default function GroupInfoScreen() {
             <Text className="flex-1 text-[15px] text-gray-800">Ghi chú</Text>
             <ChevronRight size={16} color="#d1d5db" />
           </TouchableOpacity>
+          <TouchableOpacity
+            className="flex-row items-center px-4 py-3"
+            onPress={() => setShowCreatePoll(true)}
+            activeOpacity={0.7}
+          >
+            <View className="w-9 h-9 rounded-full bg-purple-50 items-center justify-center mr-3">
+              <Text style={{ fontSize: 18 }}>📊</Text>
+            </View>
+            <Text className="flex-1 text-[15px] text-gray-800">Tạo bình chọn</Text>
+            <ChevronRight size={16} color="#d1d5db" />
+          </TouchableOpacity>
         </View>
         <View className="mt-4 border-t border-gray-100 pt-2 pb-8">
           {!isOwner && (
@@ -974,6 +987,11 @@ export default function GroupInfoScreen() {
           isAdmin={isOwner || isAdmin}
           onClose={() => setShowNoteList(false)}
         />
+      )}
+
+      {/* Create poll modal */}
+      {showCreatePoll && (
+        <CreatePollModal conversationId={conversationId} onClose={() => setShowCreatePoll(false)} />
       )}
     </SafeAreaView>
   );

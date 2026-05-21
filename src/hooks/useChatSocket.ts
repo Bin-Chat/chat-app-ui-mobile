@@ -57,6 +57,8 @@ export function useChatSocket() {
     socketMemberBanned,
     socketMemberUnbanned,
     socketMessageEdited,
+    socketPollUpdated,
+    socketPollDeleted,
   } = useChatStore();
   const { fetchFriends } = useFriendStore();
   const { setIncomingCall, clearIncomingCall, endCall } = useCallStore();
@@ -237,6 +239,23 @@ export function useChatSocket() {
       });
     };
 
+    // ── Poll events ───────────────────────────────────────────────
+    const onPollUpdated = (event: any) => {
+      socketPollUpdated({
+        pollId: event.pollId,
+        messageId: event.messageId,
+        conversationId: event.conversationId,
+        poll: event.poll,
+      });
+    };
+    const onPollDeleted = (event: any) => {
+      socketPollDeleted({
+        pollId: event.pollId,
+        messageId: event.messageId,
+        conversationId: event.conversationId,
+      });
+    };
+
     socketService.on('call:incoming', onCallIncoming);
     socketService.on('call:ended', onCallEnded);
     socketService.on('call:busy', onCallBusy);
@@ -246,6 +265,11 @@ export function useChatSocket() {
     socketService.on('note:created', onNoteCreated);
     socketService.on('note:updated', onNoteUpdated);
     socketService.on('note:deleted', onNoteDeleted);
+    socketService.on('poll:created', onPollUpdated);
+    socketService.on('poll:voted', onPollUpdated);
+    socketService.on('poll:option_added', onPollUpdated);
+    socketService.on('poll:closed', onPollUpdated);
+    socketService.on('poll:deleted', onPollDeleted);
 
     return () => {
       socketService.off('message:new', onMessageNew);
@@ -271,6 +295,11 @@ export function useChatSocket() {
       socketService.off('note:created', onNoteCreated);
       socketService.off('note:updated', onNoteUpdated);
       socketService.off('note:deleted', onNoteDeleted);
+      socketService.off('poll:created', onPollUpdated);
+      socketService.off('poll:voted', onPollUpdated);
+      socketService.off('poll:option_added', onPollUpdated);
+      socketService.off('poll:closed', onPollUpdated);
+      socketService.off('poll:deleted', onPollDeleted);
     };
   }, [user?.id]);
 }

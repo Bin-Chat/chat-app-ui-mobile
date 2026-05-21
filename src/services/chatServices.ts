@@ -201,4 +201,56 @@ export const chatServices = {
 
   deleteNote: (noteId: string) =>
     authorizedAxios.delete(`/api/chat/notes/${noteId}`).then((r) => r.data),
+
+  // ── Polls ─────────────────────────────────────────────────────────
+  createPoll: (
+    conversationId: string,
+    payload: {
+      question: string;
+      options: string[];
+      allowMultiple?: boolean;
+      allowAddOptions?: boolean;
+      hideResultsUntilVoted?: boolean;
+      hideVoters?: boolean;
+      expiresAt?: string;
+    }
+  ) =>
+    authorizedAxios
+      .post(`/api/chat/conversations/${conversationId}/polls`, payload)
+      .then((r) => r.data),
+
+  getPollsByConversation: (conversationId: string) =>
+    authorizedAxios.get(`/api/chat/conversations/${conversationId}/polls`).then((r) => r.data),
+
+  getPoll: (pollId: string) => authorizedAxios.get(`/api/chat/polls/${pollId}`).then((r) => r.data),
+
+  votePoll: (pollId: string, optionIds: string[]) =>
+    authorizedAxios.post(`/api/chat/polls/${pollId}/vote`, { optionIds }).then((r) => r.data),
+
+  addPollOption: (pollId: string, text: string) =>
+    authorizedAxios.post(`/api/chat/polls/${pollId}/options`, { text }).then((r) => r.data),
+
+  closePoll: (pollId: string) =>
+    authorizedAxios.patch(`/api/chat/polls/${pollId}/close`).then((r) => r.data),
+
+  updatePoll: (pollId: string, question: string) =>
+    authorizedAxios.patch(`/api/chat/polls/${pollId}`, { question }).then((r) => r.data),
+
+  updatePollOption: (pollId: string, optionId: string, text: string) =>
+    authorizedAxios
+      .patch(`/api/chat/polls/${pollId}/options/${optionId}`, { text })
+      .then((r) => r.data),
+
+  deletePollOption: (pollId: string, optionId: string) =>
+    authorizedAxios.delete(`/api/chat/polls/${pollId}/options/${optionId}`).then((r) => r.data),
+
+  getUsersByIds: (userIds: string[]) =>
+    authorizedAxios
+      .post<{ id: string; fullName: string; avatar?: string | null }[]>('/api/users/batch', {
+        userIds,
+      })
+      .then((r) => r.data),
+
+  deletePoll: (pollId: string) =>
+    authorizedAxios.delete(`/api/chat/polls/${pollId}`).then((r) => r.data),
 };

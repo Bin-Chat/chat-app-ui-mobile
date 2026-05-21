@@ -129,6 +129,18 @@ interface ChatActions {
     bannedUntil?: string | null;
   }) => void;
   socketMemberUnbanned: (data: { conversationId: string; memberId: string }) => void;
+  // Polls
+  socketPollUpdated: (data: {
+    pollId: string;
+    messageId: string;
+    conversationId: string;
+    poll: any;
+  }) => void;
+  socketPollDeleted: (data: {
+    pollId: string;
+    messageId: string;
+    conversationId: string;
+  }) => void;
 }
 
 export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
@@ -677,5 +689,31 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
         };
       }),
     }));
+  },
+
+  socketPollUpdated: ({ messageId, conversationId, poll }) => {
+    set((s) => {
+      const list = s.messages[conversationId];
+      if (!list) return {};
+      const next = list.map((m) => {
+        if (m._id !== messageId) return m;
+        return {
+          ...m,
+          metadata: { ...(m.metadata ?? {}), type: 'poll', pollId: poll?._id, poll },
+        } as Message;
+      });
+      return { messages: { ...s.messages, [conversationId]: next } };
+    });
+  },
+
+  socketPollDeleted: ({ messageId, conversationId }) => {
+    set((s) => {
+      const list = s.messages[conversationId];
+      if (!list) return {};
+      const next = list.map((m) =>
+        m._id === messageId ? ({ ...m, revokedAt: new Date().toISOString() } as Message) : m
+      );
+      return { messages: { ...s.messages, [conversationId]: next } };
+    });
   },
 }));
