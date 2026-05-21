@@ -59,6 +59,9 @@ export function useChatSocket() {
     socketMessageEdited,
     socketPollUpdated,
     socketPollDeleted,
+    socketGroupJoinRequested,
+    socketGroupJoinApproved,
+    socketGroupJoinDeclined,
   } = useChatStore();
   const { fetchFriends } = useFriendStore();
   const { setIncomingCall, clearIncomingCall, endCall } = useCallStore();
@@ -271,6 +274,38 @@ export function useChatSocket() {
     socketService.on('poll:closed', onPollUpdated);
     socketService.on('poll:deleted', onPollDeleted);
 
+    // ── Join Approval events ─────────────────────────────────────
+    const onGroupJoinRequested = (payload: any) => {
+      socketGroupJoinRequested({
+        conversationId: payload.conversationId,
+        requesterId: payload.requesterId,
+        requestedAt: payload.requestedAt ?? new Date().toISOString(),
+      });
+    };
+    const onGroupJoinApproved = (payload: any) => {
+      socketGroupJoinApproved({
+        conversationId: payload.conversationId,
+        requesterId: payload.requesterId,
+        allParticipantIds: payload.allParticipantIds ?? [],
+      });
+      if (payload.requesterId === user.id) {
+        fetchConversations();
+        Alert.alert('Yêu cầu tham gia nhóm của bạn đã được chấp nhận.');
+      }
+    };
+    const onGroupJoinDeclined = (payload: any) => {
+      socketGroupJoinDeclined({
+        conversationId: payload.conversationId,
+        requesterId: payload.requesterId,
+      });
+      if (payload.requesterId === user.id) {
+        Alert.alert('Yêu cầu tham gia nhóm của bạn đã bị từ chối.');
+      }
+    };
+    socketService.on('group:join_requested', onGroupJoinRequested);
+    socketService.on('group:join_approved', onGroupJoinApproved);
+    socketService.on('group:join_declined', onGroupJoinDeclined);
+
     return () => {
       socketService.off('message:new', onMessageNew);
       socketService.off('message:revoked', onMessageRevoked);
@@ -300,6 +335,9 @@ export function useChatSocket() {
       socketService.off('poll:option_added', onPollUpdated);
       socketService.off('poll:closed', onPollUpdated);
       socketService.off('poll:deleted', onPollDeleted);
+      socketService.off('group:join_requested', onGroupJoinRequested);
+      socketService.off('group:join_approved', onGroupJoinApproved);
+      socketService.off('group:join_declined', onGroupJoinDeclined);
     };
   }, [user?.id]);
 }

@@ -388,7 +388,11 @@ export default function GroupInfoScreen() {
     updateGroupSettings,
     banGroupMember,
     unbanGroupMember,
+    setPendingJoinRequests,
   } = useChatStore();
+
+  // Pending join requests from store (socket-reactive)
+  const pendingRequests = useChatStore((s) => s.pendingJoinRequests[conversationId] ?? []);
 
   const [members, setMembers] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -398,6 +402,9 @@ export default function GroupInfoScreen() {
   const [showReminderList, setShowReminderList] = useState(false);
   const [showNoteList, setShowNoteList] = useState(false);
   const [showCreatePoll, setShowCreatePoll] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(conversation?.inviteToken ?? null);
+  const [inviteEnabled, setInviteEnabled] = useState<boolean>(conversation?.inviteEnabled ?? false);
+  const [showPendingSection, setShowPendingSection] = useState(false);
 
   // Current user's role
   const myRole = useMemo(
@@ -484,6 +491,75 @@ export default function GroupInfoScreen() {
       );
     } catch (e: any) {
       Alert.alert('Lỗi', e?.message || 'Không thể bỏ cấm');
+    }
+  };
+
+  const handleGenerateInviteLink = async (regenerate = false) => {
+    try {
+      const res = await chatServices.generateInviteLink(conversationId, regenerate);
+      setInviteToken(res.inviteToken);
+      setInviteEnabled(true);
+      Alert.alert('Thành công', 'Đã tạo link mời tham gia nhóm.');
+    } catch {
+      Alert.alert('Lỗi', 'Không thể tạo link mời.');
+    }
+  };
+
+  const handleRevokeInviteLink = () => {
+    Alert.alert('Tắt link mời', 'Tắt link mời sẽ làm link cũ hết hiệu lực.', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Tắt link',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await chatServices.revokeInviteLink(conversationId);
+            setInviteEnabled(false);
+          } catch {
+            Alert.alert('Lỗi', 'Không thể tắt link mời.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleCopyInviteLink = () => {
+    if (!inviteToken) return;
+    const link = `https://chat.app/join/${inviteToken}`;
+    // React Native doesn't have clipboard by default; use Alert to show link
+    Alert.alert('Link mời', link, [{ text: 'OK' }]);
+  };
+
+  const handleFetchPending = async () => {
+    try {
+      const list = await chatServices.getPendingJoinRequests(conversationId);
+      setPendingJoinRequests(conversationId, list);
+    } catch {
+      Alert.alert('Lỗi', 'Không thể tải danh sách chờ duyệt.');
+    }
+  };
+
+  const handleApproveRequest = async (requesterId: string) => {
+    try {
+      await chatServices.approveJoinRequest(conversationId, requesterId);
+      setPendingJoinRequests(
+        conversationId,
+        pendingRequests.filter((m) => m.userId !== requesterId)
+      );
+    } catch {
+      Alert.alert('Lỗi', 'Không thể chấp nhận yêu cầu.');
+    }
+  };
+
+  const handleDeclineRequest = async (requesterId: string) => {
+    try {
+      await chatServices.declineJoinRequest(conversationId, requesterId);
+      setPendingJoinRequests(
+        conversationId,
+        pendingRequests.filter((m) => m.userId !== requesterId)
+      );
+    } catch {
+      Alert.alert('Lỗi', 'Không thể từ chối yêu cầu.');
     }
   };
 
@@ -852,6 +928,7 @@ export default function GroupInfoScreen() {
                 ['onlyAdminCanSend', 'Chỉ Quản trị viên gửi tin nhắn'],
                 ['allowMemberInvite', 'Thành viên được mời người khác'],
                 ['onlyAdminCanPin', 'Chỉ quản trị viên được ghim tin nhắn'],
+                ['requireJoinApproval', 'Duyệt thành viên mới trước khi vào nhóm'],
               ] as [string, string][]
             ).map(([key, label]) => {
               const val = !!(conversation?.settings as any)?.[key];
@@ -879,6 +956,107 @@ export default function GroupInfoScreen() {
 
         {/* Media / File / Link */}
         <ConversationMediaSections conversationId={conversationId} />
+
+        {/* Invite Link — admin/owner only */}
+        {canManage && (
+          <View className="mt-2 mx-4 mb-2 bg-gray-50 rounded-2xl px-4 py-3 border border-gray-100">
+            <Text className="text-[13px] font-semibold text-gray-700 mb-2">
+              🔗 Link mời tham gia
+            </Text>
+            {inviteEnabled && inviteToken ? (
+              <>
+                <Text className="text-[11px] text-gray-500 mb-2" numberOfLines={1}>
+                  {`https://chat.app/join/${inviteToken}`}
+                </Text>
+                <View className="flex-row gap-2">
+                  <TouchableOpacity
+                    onPress={handleCopyInviteLink}
+                    className="flex-1 bg-[#0068FF] rounded-lg py-2 items-center"
+                  >
+                    <Text className="text-white text-[12px] font-medium">Sao chép</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleGenerateInviteLink(true)}
+                    className="flex-1 bg-gray-200 rounded-lg py-2 items-center"
+                  >
+                    <Text className="text-gray-700 text-[12px] font-medium">Tạo lại</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleRevokeInviteLink}
+                    className="flex-1 bg-red-100 rounded-lg py-2 items-center"
+                  >
+                    <Text className="text-red-500 text-[12px] font-medium">Tắt link</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <TouchableOpacity
+                onPress={() => handleGenerateInviteLink(false)}
+                className="bg-[#0068FF] rounded-lg py-2 items-center"
+              >
+                <Text className="text-white text-[13px] font-medium">Tạo link mời</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Pending Join Requests — admin/owner, only when requireJoinApproval on */}
+        {canManage && !!(conversation?.settings as any)?.requireJoinApproval && (
+          <View className="mt-2 mx-4 mb-2 bg-gray-50 rounded-2xl px-4 py-3 border border-gray-100">
+            <TouchableOpacity
+              onPress={() => {
+                if (!showPendingSection) handleFetchPending();
+                setShowPendingSection((v) => !v);
+              }}
+              className="flex-row items-center justify-between"
+            >
+              <View className="flex-row items-center gap-2">
+                <Text className="text-[13px] font-semibold text-gray-700">⏳ Chờ duyệt</Text>
+                {pendingRequests.length > 0 && (
+                  <View className="bg-red-500 rounded-full px-1.5 py-0.5 ml-1">
+                    <Text className="text-white text-[10px] font-bold">
+                      {pendingRequests.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text className="text-gray-400 text-[11px]">{showPendingSection ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            {showPendingSection && (
+              <View className="mt-2">
+                {pendingRequests.length === 0 ? (
+                  <Text className="text-[12px] text-gray-400 text-center py-2">
+                    Không có yêu cầu nào
+                  </Text>
+                ) : (
+                  pendingRequests.map((m) => (
+                    <View key={m.userId} className="flex-row items-center py-2 gap-2">
+                      <UserAvatar userId={m.userId} size={30} />
+                      <View className="flex-1">
+                        <Text className="text-[12px] text-gray-800">{m.userId}</Text>
+                        <Text className="text-[10px] text-gray-400">
+                          {new Date(m.requestedAt).toLocaleDateString('vi-VN')}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => handleApproveRequest(m.userId)}
+                        className="bg-green-100 rounded-lg px-2 py-1"
+                      >
+                        <Text className="text-green-600 text-[11px] font-medium">Duyệt</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleDeclineRequest(m.userId)}
+                        className="bg-red-100 rounded-lg px-2 py-1"
+                      >
+                        <Text className="text-red-500 text-[11px] font-medium">Từ chối</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Bảng tin nhóm */}
         <View className="mt-2 border-t border-gray-100">
@@ -948,8 +1126,15 @@ export default function GroupInfoScreen() {
           existingMemberIds={members.map((m) => m.userId)}
           friends={friends}
           onAdd={async (ids) => {
-            await addGroupMembers(conversationId, ids);
-            await loadMembers();
+            const result = await addGroupMembers(conversationId, ids);
+            if (result.status === 'pending') {
+              Alert.alert(
+                'Đã gửi yêu cầu',
+                `${result.pendingCount ?? ids.length} thành viên đang chờ Admin phê duyệt.`
+              );
+            } else {
+              await loadMembers();
+            }
             setShowAddMember(false);
           }}
           onClose={() => setShowAddMember(false)}

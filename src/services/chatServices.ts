@@ -79,7 +79,12 @@ export const chatServices = {
 
   addMembers: (conversationId: string, memberIds: string[]) =>
     authorizedAxios
-      .post<Conversation>(`/api/chat/conversations/${conversationId}/members`, { memberIds })
+      .post<{
+        success: boolean;
+        addedCount?: number;
+        pendingCount?: number;
+        status?: string;
+      }>(`/api/chat/conversations/${conversationId}/members`, { memberIds })
       .then((r) => r.data),
 
   removeMember: (conversationId: string, memberId: string) =>
@@ -253,4 +258,48 @@ export const chatServices = {
 
   deletePoll: (pollId: string) =>
     authorizedAxios.delete(`/api/chat/polls/${pollId}`).then((r) => r.data),
+
+  // ── Join Approval ────────────────────────────────────────────────
+  generateInviteLink: (conversationId: string, regenerate = false) =>
+    authorizedAxios
+      .post<{
+        inviteToken: string;
+        inviteEnabled: boolean;
+      }>(`/api/chat/conversations/${conversationId}/invite-link`, { regenerate })
+      .then((r) => r.data),
+
+  revokeInviteLink: (conversationId: string) =>
+    authorizedAxios
+      .delete(`/api/chat/conversations/${conversationId}/invite-link`)
+      .then((r) => r.data),
+
+  joinByToken: (token: string) =>
+    authorizedAxios
+      .post<{
+        status: 'joined' | 'pending';
+        conversationId: string;
+      }>(`/api/chat/conversations/join/${token}`)
+      .then((r) => r.data),
+
+  getPendingJoinRequests: (conversationId: string) =>
+    authorizedAxios
+      .get<
+        { userId: string; requestedAt: string }[]
+      >(`/api/chat/conversations/${conversationId}/join-requests`)
+      .then((r) => r.data),
+
+  approveJoinRequest: (conversationId: string, requesterId: string) =>
+    authorizedAxios
+      .patch(`/api/chat/conversations/${conversationId}/join-requests/${requesterId}/approve`)
+      .then((r) => r.data),
+
+  declineJoinRequest: (conversationId: string, requesterId: string) =>
+    authorizedAxios
+      .patch(`/api/chat/conversations/${conversationId}/join-requests/${requesterId}/decline`)
+      .then((r) => r.data),
+
+  cancelJoinRequest: (conversationId: string) =>
+    authorizedAxios
+      .delete(`/api/chat/conversations/${conversationId}/join-requests/me`)
+      .then((r) => r.data),
 };

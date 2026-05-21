@@ -69,7 +69,10 @@ interface ChatActions {
     action?: 'added' | 'removed';
   }) => void;
   // Group management
-  addGroupMembers: (conversationId: string, memberIds: string[]) => Promise<void>;
+  addGroupMembers: (
+    conversationId: string,
+    memberIds: string[]
+  ) => Promise<{ success: boolean; addedCount?: number; pendingCount?: number; status?: string }>;
   removeGroupMember: (conversationId: string, memberId: string) => Promise<void>;
   leaveGroup: (conversationId: string) => Promise<void>;
   updateGroup: (
@@ -136,11 +139,24 @@ interface ChatActions {
     conversationId: string;
     poll: any;
   }) => void;
-  socketPollDeleted: (data: {
-    pollId: string;
-    messageId: string;
+  socketPollDeleted: (data: { pollId: string; messageId: string; conversationId: string }) => void;
+  // Join Approval
+  pendingJoinRequests: Record<string, { userId: string; requestedAt: string }[]>;
+  setPendingJoinRequests: (
+    conversationId: string,
+    requests: { userId: string; requestedAt: string }[]
+  ) => void;
+  socketGroupJoinRequested: (data: {
     conversationId: string;
+    requesterId: string;
+    requestedAt: string;
   }) => void;
+  socketGroupJoinApproved: (data: {
+    conversationId: string;
+    requesterId: string;
+    allParticipantIds: string[];
+  }) => void;
+  socketGroupJoinDeclined: (data: { conversationId: string; requesterId: string }) => void;
 }
 
 export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
@@ -155,6 +171,7 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   error: null,
   inAppNotification: null,
   unreadCounts: {},
+  pendingJoinRequests: {},
 
   setActiveConversation: (id) =>
     set((s) => ({
@@ -264,7 +281,10 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       if (isLast && convIdx >= 0 && conversations[convIdx].lastMessage) {
         conversations[convIdx] = {
           ...conversations[convIdx],
-          lastMessage: { ...conversations[convIdx].lastMessage!, revokedAt: new Date().toISOString() },
+          lastMessage: {
+            ...conversations[convIdx].lastMessage!,
+            revokedAt: new Date().toISOString(),
+          },
         };
       }
       return {
@@ -361,7 +381,15 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     });
   },
 
-  socketMessageRevoked: ({ messageId, conversationId, revokedBy }: { messageId: string; conversationId: string; revokedBy?: string }) => {
+  socketMessageRevoked: ({
+    messageId,
+    conversationId,
+    revokedBy,
+  }: {
+    messageId: string;
+    conversationId: string;
+    revokedBy?: string;
+  }) => {
     set((s) => {
       const msgs = s.messages[conversationId] ?? [];
       const isLast = msgs.length > 0 && msgs[0]?._id === messageId;
@@ -370,14 +398,19 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       if (isLast && convIdx >= 0 && conversations[convIdx].lastMessage) {
         conversations[convIdx] = {
           ...conversations[convIdx],
-          lastMessage: { ...conversations[convIdx].lastMessage!, revokedAt: new Date().toISOString() },
+          lastMessage: {
+            ...conversations[convIdx].lastMessage!,
+            revokedAt: new Date().toISOString(),
+          },
         };
       }
       return {
         messages: {
           ...s.messages,
           [conversationId]: msgs.map((m) =>
-            m._id === messageId ? { ...m, revokedAt: new Date().toISOString(), ...(revokedBy ? { revokedBy } : {}) } : m
+            m._id === messageId
+              ? { ...m, revokedAt: new Date().toISOString(), ...(revokedBy ? { revokedBy } : {}) }
+              : m
           ),
         },
         conversations,
@@ -434,10 +467,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
   // ── Group Management ──────────────────────────────────────────────
 
   addGroupMembers: async (conversationId, memberIds) => {
-    const updated = await chatServices.addMembers(conversationId, memberIds);
-    set((s) => ({
-      conversations: s.conversations.map((c) => (c._id === updated._id ? { ...c, ...updated } : c)),
-    }));
+    const result = await chatServices.addMembers(conversationId, memberIds);
+    return result;
   },
 
   removeGroupMember: async (conversationId, memberId) => {
@@ -593,7 +624,8 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
           ...c,
           participants: c.participants.map((p) => {
             if (p.userId === oldOwnerId) return { ...p, role: 'admin' as const };
-            if (p.userId === newOwnerId) return { ...p, role: 'owner' as const };
+            if (p.userId === newOwnerId)
+              return { ...p, role: 'owner' as const, isBanned: false, bannedUntil: null };
             return p;
           }),
         };
@@ -716,4 +748,36 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       return { messages: { ...s.messages, [conversationId]: next } };
     });
   },
+
+  // ── Join Approval ────────────────────────────────────────────────
+  setPendingJoinRequests: (conversationId, requests) =>
+    set((s) => ({ pendingJoinRequests: { ...s.pendingJoinRequests, [conversationId]: requests } })),
+
+  socketGroupJoinRequested: ({ conversationId, requesterId, requestedAt }) =>
+    set((s) => {
+      const existing = s.pendingJoinRequests[conversationId] ?? [];
+      if (existing.some((m) => m.userId === requesterId)) return {};
+      return {
+        pendingJoinRequests: {
+          ...s.pendingJoinRequests,
+          [conversationId]: [...existing, { userId: requesterId, requestedAt }],
+        },
+      };
+    }),
+
+  socketGroupJoinApproved: ({ conversationId, requesterId }) =>
+    set((s) => {
+      const pending = (s.pendingJoinRequests[conversationId] ?? []).filter(
+        (m) => m.userId !== requesterId
+      );
+      return { pendingJoinRequests: { ...s.pendingJoinRequests, [conversationId]: pending } };
+    }),
+
+  socketGroupJoinDeclined: ({ conversationId, requesterId }) =>
+    set((s) => {
+      const pending = (s.pendingJoinRequests[conversationId] ?? []).filter(
+        (m) => m.userId !== requesterId
+      );
+      return { pendingJoinRequests: { ...s.pendingJoinRequests, [conversationId]: pending } };
+    }),
 }));

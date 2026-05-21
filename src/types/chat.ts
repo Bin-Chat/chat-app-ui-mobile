@@ -81,4 +81,7 @@ export interface Conversation {
   };
   createdAt: string;
   updatedAt: string;
+  inviteToken?: string | null;
+  inviteEnabled?: boolean;
+  pendingMembers?: { userId: string; requestedAt: string }[];
 }

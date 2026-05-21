@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { saveCookies } from './cookieStorage';
+import { saveCookies, getCookieHeader } from './cookieStorage';
 import { getApiUrl } from './getApiUrl';
 
 const publicAxios = axios.create({
@@ -9,6 +9,18 @@ const publicAxios = axios.create({
   // Force XHR adapter — prevent axios 1.7+ from selecting fetch adapter in RN 0.81
   adapter: 'xhr',
 });
+
+// Attach stored cookies so refresh token is sent with /api/auth/refresh
+publicAxios.interceptors.request.use(
+  async (config) => {
+    const cookie = await getCookieHeader();
+    if (cookie) {
+      config.headers['Cookie'] = cookie;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // Save any Set-Cookie headers from responses (e.g. after login)
 publicAxios.interceptors.response.use(
