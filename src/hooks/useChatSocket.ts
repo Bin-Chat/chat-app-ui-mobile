@@ -274,6 +274,48 @@ export function useChatSocket() {
     socketService.on('poll:closed', onPollUpdated);
     socketService.on('poll:deleted', onPollDeleted);
 
+    // ── Task events ────────────────────────────────────────────────
+    const onTaskCreated = (event: any) => {
+      if (Array.isArray(event.tasks)) {
+        DeviceEventEmitter.emit('task:batch_created', {
+          conversationId: event.conversationId,
+          tasks: event.tasks,
+        });
+      } else if (event.task) {
+        DeviceEventEmitter.emit('task:created', {
+          conversationId: event.conversationId,
+          task: event.task,
+        });
+      }
+    };
+    const onTaskUpdated = (event: any) => {
+      DeviceEventEmitter.emit('task:updated', {
+        conversationId: event.conversationId,
+        task: event.task,
+      });
+    };
+    const onTaskCompleted = (event: any) => {
+      DeviceEventEmitter.emit('task:completed', {
+        conversationId: event.conversationId,
+        task: event.task,
+      });
+    };
+    const onTaskDeleted = (event: any) => {
+      DeviceEventEmitter.emit('task:deleted', {
+        conversationId: event.conversationId,
+        taskId: event.taskId,
+      });
+    };
+    const onTaskAssigned = (event: any) => {
+      if (event.assigneeId !== user.id) return;
+      Alert.alert('Công việc mới', `Bạn được giao: ${event.title}`);
+    };
+    socketService.on('task:created', onTaskCreated);
+    socketService.on('task:updated', onTaskUpdated);
+    socketService.on('task:completed', onTaskCompleted);
+    socketService.on('task:deleted', onTaskDeleted);
+    socketService.on('task:assigned', onTaskAssigned);
+
     // ── Join Approval events ─────────────────────────────────────
     const onGroupJoinRequested = (payload: any) => {
       socketGroupJoinRequested({
@@ -335,6 +377,11 @@ export function useChatSocket() {
       socketService.off('poll:option_added', onPollUpdated);
       socketService.off('poll:closed', onPollUpdated);
       socketService.off('poll:deleted', onPollDeleted);
+      socketService.off('task:created', onTaskCreated);
+      socketService.off('task:updated', onTaskUpdated);
+      socketService.off('task:completed', onTaskCompleted);
+      socketService.off('task:deleted', onTaskDeleted);
+      socketService.off('task:assigned', onTaskAssigned);
       socketService.off('group:join_requested', onGroupJoinRequested);
       socketService.off('group:join_approved', onGroupJoinApproved);
       socketService.off('group:join_declined', onGroupJoinDeclined);

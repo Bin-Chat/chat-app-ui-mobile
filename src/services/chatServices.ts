@@ -302,4 +302,54 @@ export const chatServices = {
     authorizedAxios
       .delete(`/api/chat/conversations/${conversationId}/join-requests/me`)
       .then((r) => r.data),
+
+  // ── Tasks ─────────────────────────────────────────────────────────
+  createTask: (
+    conversationId: string,
+    payload: {
+      title: string;
+      description?: string;
+      assigneeId?: string | null;
+      priority?: 'low' | 'medium' | 'high';
+      dueDate?: string | null;
+    }
+  ) =>
+    authorizedAxios
+      .post(`/api/chat/conversations/${conversationId}/tasks`, payload)
+      .then((r) => r.data),
+
+  getTasks: (conversationId: string, status?: 'todo' | 'in_progress' | 'done') =>
+    authorizedAxios
+      .get(`/api/chat/conversations/${conversationId}/tasks`, {
+        params: status ? { status } : undefined,
+      })
+      .then((r) => r.data),
+
+  getTaskStats: (conversationId: string) =>
+    authorizedAxios
+      .get(`/api/chat/conversations/${conversationId}/tasks/stats`)
+      .then((r) => r.data),
+
+  updateTask: (
+    taskId: string,
+    payload: {
+      title?: string;
+      description?: string;
+      assigneeId?: string | null;
+      priority?: 'low' | 'medium' | 'high';
+      dueDate?: string | null;
+      status?: 'todo' | 'in_progress' | 'done';
+    }
+  ) => authorizedAxios.patch(`/api/chat/tasks/${taskId}`, payload).then((r) => r.data),
+
+  completeTask: (taskId: string) =>
+    authorizedAxios.post(`/api/chat/tasks/${taskId}/complete`).then((r) => r.data),
+
+  deleteTask: (taskId: string) =>
+    authorizedAxios.delete(`/api/chat/tasks/${taskId}`).then((r) => r.data),
+
+  addTaskComment: (taskId: string, content: string) =>
+    authorizedAxios
+      .post(`/api/chat/tasks/${taskId}/comments`, { content })
+      .then((r) => r.data),
 };

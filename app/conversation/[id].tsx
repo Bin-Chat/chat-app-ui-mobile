@@ -61,6 +61,7 @@ import {
   Calendar,
   StickyNote,
   PinOff,
+  CheckSquare,
 } from 'lucide-react-native';
 
 import { useChatStore } from '@/store/chatStore';
@@ -73,6 +74,8 @@ import { uploadFile, FILE_SIZE_LIMITS, getCategory } from '@/services/uploadServ
 import { chatServices } from '@/services/chatServices';
 import NoteListModal from '@/components/NoteListModal';
 import PollBubble from '@/components/PollBubble';
+import TaskPanel from '@/components/TaskPanel';
+import TaskListMessage from '@/components/TaskListMessage';
 import { aiServices } from '@/services/aiServices';
 import type { Message, Attachment } from '@/types/chat';
 import type { Note } from '@/types/note.type';
@@ -1006,6 +1009,7 @@ function MessageBubble({
   onEdit,
   onTranslate,
   onRewrite,
+  isBotMsg = false,
   isHighlighted = false,
 }: {
   message: Message;
@@ -1026,6 +1030,7 @@ function MessageBubble({
   onEdit?: () => void;
   onTranslate?: (content: string) => void;
   onRewrite?: (content: string) => void;
+  isBotMsg?: boolean;
   isHighlighted?: boolean;
 }) {
   const { revokeMessage, deleteMessage, reactToMessage } = useChatStore();
@@ -1150,10 +1155,24 @@ function MessageBubble({
       >
         {showAvatar && !isMine && (
           <View className="mr-2 mt-auto mb-1">
-            <UserAvatar user={{ fullName: senderName, avatar: senderAvatar }} size={28} />
+            {isBotMsg ? (
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#0068FF', alignItems: 'center', justifyContent: 'center' }}>
+                <Bot size={14} color="#fff" />
+              </View>
+            ) : (
+              <UserAvatar user={{ fullName: senderName, avatar: senderAvatar }} size={28} />
+            )}
           </View>
         )}
         <View className="max-w-[280px]">
+          {isBotMsg && showAvatar && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+              <Text style={{ fontSize: 11, color: '#0068FF', fontWeight: '600' }}>BinChat Bot</Text>
+              <View style={{ backgroundColor: '#0068FF', borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 }}>
+                <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>AI</Text>
+              </View>
+            </View>
+          )}
           {message.forwardedFrom && (
             <View className="flex-row items-center mb-0.5">
               <CornerUpRight size={10} color="#9ca3af" />
@@ -1329,7 +1348,8 @@ function MessageBubble({
           {/* ── Text / mixed / reply message: bubble with background ── */}
           {needsBubble && (
             <View
-              className={`rounded-2xl px-3 py-2 ${isMine ? 'bg-[#0068FF]' : 'bg-white shadow-sm'}`}
+              className={`rounded-2xl px-3 py-2 ${isMine ? 'bg-[#0068FF]' : isBotMsg ? 'bg-[#EBF3FF]' : 'bg-white shadow-sm'}`}
+              style={isBotMsg ? { borderWidth: 1, borderColor: 'rgba(0,104,255,0.2)' } : undefined}
             >
               {/* Reply quoted band */}
               {message.replyTo && (
@@ -1659,6 +1679,8 @@ export default function ConversationScreen() {
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
   const [text, setText] = useState('');
+  const hasBotMention = /@bot\b/i.test(text);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
@@ -1740,6 +1762,33 @@ export default function ConversationScreen() {
   const myRole = conversation?.participants.find((p) => p.userId === user?.id)?.role;
   const isAdminOrOwner = myRole === 'owner' || myRole === 'admin';
 
+  // ── @mention autocomplete data ──────────────────────────────────────
+  const groupMembersForMention = useMemo(() => {
+    const items: Array<{ userId: string; name: string; avatar?: string; isBot?: boolean }> = [
+      { userId: 'binchat-ai-bot', name: 'BinChat Bot', isBot: true },
+    ];
+    if (conversation) {
+      for (const p of conversation.participants as any[]) {
+        if (p.userId === user?.id) continue;
+        if (p.userId === 'binchat-ai-bot') continue;
+        const friend = friends.find((f) => f.user.id === p.userId);
+        items.push({
+          userId: p.userId,
+          name: friend?.user?.fullName ?? p.fullName ?? p.userId,
+          avatar: friend?.user?.avatar,
+        });
+      }
+    }
+    return items;
+  }, [conversation, user, friends]);
+
+  const filteredMentions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase().trim();
+    if (!q) return groupMembersForMention;
+    return groupMembersForMention.filter((m) => m.name.toLowerCase().includes(q));
+  }, [mentionQuery, groupMembersForMention]);
+
   const initiateCall = useCallback(
     (callType: 'audio' | 'video') => {
       if (!conversation || !user || callStatus !== 'idle') return;
@@ -1773,6 +1822,7 @@ export default function ConversationScreen() {
   // Multi-pin banner cycling (includes pinned messages + pinned notes)
   const [pinnedNotes, setPinnedNotes] = useState<Note[]>([]);
   const [showNoteListModal, setShowNoteListModal] = useState(false);
+  const [showTaskPanel, setShowTaskPanel] = useState(false);
   useEffect(() => {
     if (!conversationId) return;
     let cancelled = false;
@@ -1896,9 +1946,18 @@ export default function ConversationScreen() {
     return messages.filter((m) => !(m.deletedFor ?? []).includes(user?.id ?? ''));
   }, [messages, user]);
 
+  // Insert a @mention into the text field
+  const insertMention = (member: { userId: string; name: string; isBot?: boolean }) => {
+    const mentionTag = member.isBot ? '@bot' : `@${member.name}`;
+    // Replace the @query fragment at the end of current text
+    const newText = text.replace(/@([^@]*)$/, `${mentionTag} `);
+    setText(newText);
+    setMentionQuery(null);
+  };
+
   const handleSend = async () => {
+    setMentionQuery(null);
     const trimmed = text.trim();
-    if (!trimmed && pendingAttachments.length === 0) return;
 
     // Handle edit mode
     if (editingMessage) {
@@ -2349,6 +2408,18 @@ export default function ConversationScreen() {
     if (item.senderId === 'system' || item.type === 'system') {
       const content = item.content ?? '';
 
+      // ── Task list (created by AI bot / user) ─────────────────────
+      if (item.metadata?.type === 'task_list_created') {
+        return (
+          <TaskListMessage
+            conversationId={conversationId}
+            currentUserId={user?.id ?? ''}
+            isAdmin={isAdminOrOwner}
+            metadata={item.metadata as any}
+          />
+        );
+      }
+
       // ── Call system messages ─────────────────────────────────────────
       const isVoiceCall = content.startsWith('[VOICE]') || content.startsWith('📞');
       const isVideoCall = content.startsWith('[VIDEO]') || content.startsWith('📹');
@@ -2563,13 +2634,14 @@ export default function ConversationScreen() {
       );
     }
 
+    const isBotMsg = item.senderId === 'binchat-ai-bot';
     const isMine = item.senderId === user?.id;
     // Since list is inverted, index 0 = newest. Previous message is index+1
     const prevMsg = visibleMessages[index + 1];
     const showAvatar = !isMine && (!prevMsg || prevMsg.senderId !== item.senderId);
-    const sender = !isMine ? friends.find((f) => f.user.id === item.senderId)?.user : null;
-    // Show sender name in group chats when avatar is shown
-    const showSenderName = conversation?.type === 'group' && !isMine && showAvatar;
+    const sender = !isMine && !isBotMsg ? friends.find((f) => f.user.id === item.senderId)?.user : null;
+    // Show sender name in group chats when avatar is shown (bot handles its own label)
+    const showSenderName = conversation?.type === 'group' && !isMine && showAvatar && !isBotMsg;
     msgIndexMap.current.set(item._id, index);
 
     return (
@@ -2581,6 +2653,7 @@ export default function ConversationScreen() {
           message={item}
           isMine={isMine}
           showAvatar={showAvatar}
+          isBotMsg={isBotMsg}
           senderName={sender?.fullName}
           senderAvatar={sender?.avatar}
           conversationId={conversationId}
@@ -2685,6 +2758,13 @@ export default function ConversationScreen() {
             </TouchableOpacity>
           </>
         )}
+        {/* Task panel button */}
+        <TouchableOpacity
+          onPress={() => setShowTaskPanel(true)}
+          className="w-9 h-9 items-center justify-center"
+        >
+          <CheckSquare size={20} color="#6b7280" />
+        </TouchableOpacity>
         {/* AI buttons */}
         <TouchableOpacity
           onPress={() => {
@@ -2812,6 +2892,108 @@ export default function ConversationScreen() {
             </View>
           ) : (
             <>
+              {/* @mention autocomplete popup */}
+              {filteredMentions.length > 0 && (
+                <View
+                  style={{
+                    marginHorizontal: 12,
+                    marginTop: 8,
+                    backgroundColor: '#fff',
+                    borderRadius: 18,
+                    borderWidth: 1,
+                    borderColor: '#f0f0f0',
+                    shadowColor: '#000',
+                    shadowOpacity: 0.12,
+                    shadowRadius: 16,
+                    shadowOffset: { width: 0, height: -4 },
+                    elevation: 6,
+                    maxHeight: 240,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Header */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#f9fafb', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
+                    <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#0068FF', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 9, color: '#fff', fontWeight: '800' }}>@</Text>
+                    </View>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#9ca3af', letterSpacing: 0.8, textTransform: 'uppercase' }}>Nhắc đến</Text>
+                  </View>
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {filteredMentions.map((member) => (
+                      <TouchableOpacity
+                        key={member.userId}
+                        onPress={() => insertMention(member)}
+                        activeOpacity={0.7}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          borderBottomWidth: 1,
+                          borderBottomColor: '#f9fafb',
+                        }}
+                      >
+                        {/* Avatar */}
+                        <View style={{ position: 'relative', marginRight: 11 }}>
+                          {member.isBot ? (
+                            <View style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: '#0068FF' }}>
+                              <Bot size={18} color="#fff" />
+                            </View>
+                          ) : member.avatar ? (
+                            <Image source={{ uri: member.avatar }} style={{ width: 38, height: 38, borderRadius: 19 }} />
+                          ) : (
+                            <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#818cf8', alignItems: 'center', justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>
+                                {member.name.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          {!member.isBot && (
+                            <View style={{ position: 'absolute', bottom: 0, right: 0, width: 11, height: 11, backgroundColor: '#4ade80', borderRadius: 6, borderWidth: 2, borderColor: '#fff' }} />
+                          )}
+                        </View>
+
+                        {/* Text */}
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: '#111827' }} numberOfLines={1}>
+                              {member.name}
+                            </Text>
+                            {member.isBot && (
+                              <View style={{ backgroundColor: '#0068FF', borderRadius: 20, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                <Text style={{ fontSize: 9, color: '#fff', fontWeight: '800' }}>AI</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
+                            {member.isBot ? 'BinChat AI Assistant' : `@${member.name}`}
+                          </Text>
+                        </View>
+
+                        {/* Arrow */}
+                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: -1 }}>›</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+              {/* @bot mention banner */}
+              {hasBotMention && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 8, padding: 8, backgroundColor: '#EBF3FF', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(0,104,255,0.15)' }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#0068FF', alignItems: 'center', justifyContent: 'center' }}>
+                    <Bot size={14} color="#fff" />
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 12, color: '#0068FF', fontWeight: '500' }}>BinChat Bot đang được kích hoạt</Text>
+                  <View style={{ backgroundColor: '#0068FF', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>AI</Text>
+                  </View>
+                </View>
+              )}
               {/* Reply preview */}
               {replyingTo && (
                 <View className="flex-row items-center gap-2 mx-3 mt-2 px-3 py-2 bg-gray-50 rounded-xl border-l-4 border-[#0068FF]">
@@ -2913,7 +3095,12 @@ export default function ConversationScreen() {
                 ) : (
                   <TextInput
                     value={text}
-                    onChangeText={setText}
+                    onChangeText={(val) => {
+                      setText(val);
+                      // Detect @query at end of text for autocomplete
+                      const m = val.match(/@([^@]*)$/);
+                      setMentionQuery(m ? m[1] : null);
+                    }}
                     placeholder="Nhập tin nhắn..."
                     multiline
                     maxLength={2000}
@@ -3655,6 +3842,17 @@ export default function ConversationScreen() {
           currentUserId={user?.id ?? ''}
           isAdmin={isAdminOrOwner}
           onClose={() => setShowNoteListModal(false)}
+        />
+      )}
+
+      {/* Task panel */}
+      {showTaskPanel && conversation && (
+        <TaskPanel
+          conversationId={conversationId}
+          currentUserId={user?.id ?? ''}
+          members={conversation.participants ?? []}
+          isAdmin={isAdminOrOwner}
+          onClose={() => setShowTaskPanel(false)}
         />
       )}
     </SafeAreaView>
