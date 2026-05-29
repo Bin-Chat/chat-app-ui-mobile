@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "ChatApp",
-    "slug": "chat-app-mobile",
+    "name": "BinChat",
+    "slug": "binchat-mobile",
     "version": "1.0.0",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
@@ -12,12 +12,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.chatapp.mobile",
+      "bundleIdentifier": "me.binchat.mobile",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Cần quyền truy cập micro để ghi âm tin nhắn thoại."
+        "NSMicrophoneUsageDescription": "Can quyen truy cap micro de ghi am tin nhan thoai."
       }
     },
     "android": {
@@ -25,13 +27,29 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.chatapp.mobile",
-      "permissions": ["android.permission.RECORD_AUDIO"]
+      "package": "me.binchat.mobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "chatapp",
-    "plugins": ["expo-router", "expo-audio"]
+    "scheme": "binchat",
+    "plugins": [
+      "expo-router",
+      "expo-audio",
+      "expo-asset"
+    ],
+    "extra": {
+      "apiUrl": "https://api.binchat.me",
+      "socketUrl": "https://api.binchat.me",
+      "router": {},
+      "eas": {
+        "projectId": "d0602f73-442b-4efc-b787-f60a135d65d5"
+      }
+    },
+    "owner": "ngocanh25092004"
   }
 }
