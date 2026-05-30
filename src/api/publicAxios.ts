@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { saveCookies, getCookieHeader } from './cookieStorage';
 import { getApiUrl } from './getApiUrl';
+import { attachClientRateLimiter, attachRetry3s } from './apiFaultTolerance';
 
 const publicAxios = axios.create({
   baseURL: getApiUrl(),
@@ -9,6 +10,8 @@ const publicAxios = axios.create({
   // Force XHR adapter — prevent axios 1.7+ from selecting fetch adapter in RN 0.81
   adapter: 'xhr',
 });
+
+attachClientRateLimiter(publicAxios);
 
 // Attach stored cookies so refresh token is sent with /api/auth/refresh
 publicAxios.interceptors.request.use(
@@ -30,5 +33,7 @@ publicAxios.interceptors.response.use(
   },
   (error) => Promise.reject(error)
 );
+
+attachRetry3s(publicAxios);
 
 export default publicAxios;

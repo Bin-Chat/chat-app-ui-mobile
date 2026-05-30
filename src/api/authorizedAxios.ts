@@ -3,6 +3,7 @@ import type { InternalAxiosRequestConfig } from 'axios';
 import { Alert } from 'react-native';
 import { saveCookies, getCookieHeader, clearCookies } from './cookieStorage';
 import { getApiUrl } from './getApiUrl';
+import { attachClientRateLimiter, attachRetry3s } from './apiFaultTolerance';
 
 export { saveCookies, getCookieHeader, clearCookies };
 
@@ -27,6 +28,8 @@ const authorizedAxios = axios.create({
   // "Body is unusable: Body has already been read" on retry/intercept flows.
   adapter: 'xhr',
 });
+
+attachClientRateLimiter(authorizedAxios);
 
 // ── Request interceptor: attach cookies ──────────────────────────────────────
 
@@ -123,5 +126,7 @@ authorizedAxios.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+attachRetry3s(authorizedAxios);
 
 export default authorizedAxios;
