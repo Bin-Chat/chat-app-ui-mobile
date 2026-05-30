@@ -69,6 +69,11 @@ export function attachRetry3s(
   attempts = DEFAULT_RETRY_ATTEMPTS,
   delayMs = DEFAULT_RETRY_DELAY_MS
 ) {
+  // Retry co kiem soat cho client mobile:
+  // - Chi retry GET/HEAD vi day la request doc du lieu.
+  // - Khong retry POST/PUT/PATCH/DELETE de tranh tao duplicate message/upload/action.
+  // - Chi retry khi loi mang, timeout, hoac server tra ve 5xx.
+  // - Moi lan retry se cho 3000ms de tranh spam server khi he thong dang loi.
   instance.interceptors.response.use(undefined, async (error: AxiosError) => {
     const config = error.config as FaultTolerantRequestConfig | undefined;
     if (!config || !isRetryable(error)) {
